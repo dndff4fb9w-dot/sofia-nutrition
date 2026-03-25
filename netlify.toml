@@ -1,0 +1,12 @@
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/claude"
+  to = "https://api.anthropic.com/v1/messages"
+  status = 200
+  force = true
+  [redirects.headers]
+    X-Api-Key = "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"
+    anthropic-version = "2023-06-01"
+    Content-Type = "application/json"
