@@ -282,9 +282,9 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
 }
 
 async function parseFood(desc) {
-  const sys = `Nutrition database. Return ONLY valid JSON, no markdown:
-{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence for kidney stone prevention"}
-All mg except calories(kcal) and protein(g).`;
+  const sys = `Nutrition database. Sofia is STRICTLY pescatarian — only fish, seafood, eggs, dairy, plant proteins. NEVER suggest chicken, beef, pork or any meat. Return ONLY valid JSON, no markdown:
+{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence for kidney stone prevention — never suggest meat"}
+All mg except calories(kcal) and protein(g). Use brand-specific values when brand is mentioned (e.g. Silk soy milk = 300mg Ca, 115mg Na, 7g protein per cup).`;
   try {
     const raw = await callClaude([{ role: "user", content: desc }], sys);
     if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
@@ -306,8 +306,8 @@ All mg except calories(kcal) and protein(g). Be specific about what you see.`;
 }
 
 async function getCoachTip(foodName, totals, targets, proteinTarget) {
-  const sys = `You are Sofia's nutrition coach. Give ONE short, specific, actionable tip based on what she just ate and her running totals today. Max 2 sentences. Be direct and personal. Reference specific numbers. Focus on kidney stones, protein targets, or what she needs next.
-Context: kidney stones, sodium ≤${targets.sodium_mg}mg/day, calcium ~${targets.calcium_mg}mg with meals, protein target today ${proteinTarget}g.`;
+  const sys = `You are Sofia's nutrition coach. She is STRICTLY pescatarian — NEVER suggest chicken, beef, pork, turkey or any meat. Only fish, seafood, eggs, dairy, plant proteins. Give ONE short, specific, actionable tip. Max 2 sentences. Be direct and personal. Reference specific numbers. Focus on kidney stones, protein targets, or what she needs next.
+Context: kidney stones, sodium ≤${targets.sodium_mg}mg/day, calcium ~${targets.calcium_mg}mg with meals, protein target today ${proteinTarget}g. NEVER suggest meat.`;
   const msg = `She just logged: ${foodName}
 Running totals: sodium ${totals.sodium}mg, calcium ${totals.calcium}mg, protein ${totals.protein}g, magnesium ${totals.magnesium}mg, calories ${totals.calories}kcal.
 What's the most important thing she should do or eat next?`;
@@ -328,62 +328,21 @@ function fileToBase64(file) {
 // ─── Voice input hook ─────────────────────────────────────────────────────────
 function useVoice(onResult){
   const [listening,setListening]=useState(false);
-  const [micError,setMicError]=useState(null);
   const recRef=useRef(null);
 
   function startListening(){
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SpeechRecognition){
-      alert("Voice input requires Safari on iPhone. Please open this app in Safari.");
-      return;
-    }
-    // Stop any existing session first
-    if(recRef.current){try{recRef.current.stop();}catch(e){}}
-    
+    if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
     const rec=new SpeechRecognition();
-    rec.lang="en-US";
-    rec.continuous=false;
-    rec.interimResults=false;
-    rec.maxAlternatives=1;
-    
-    rec.onstart=()=>{setListening(true);setMicError(null);};
-    
-    rec.onresult=e=>{
-      if(e.results&&e.results.length>0){
-        const t=e.results[0][0].transcript;
-        if(t&&t.trim()){onResult(t.trim());}
-      }
-      setListening(false);
-    };
-    
-    rec.onerror=e=>{
-      setListening(false);
-      if(e.error==="not-allowed"){
-        alert("Microphone access denied. Go to iPhone Settings → Safari → Microphone and allow access.");
-      } else if(e.error==="no-speech"){
-        // Silently ignore - user just didn't speak
-      } else {
-        setMicError(e.error);
-      }
-    };
-    
-    rec.onend=()=>{setListening(false);};
-    
-    try{
-      rec.start();
-      recRef.current=rec;
-    } catch(e){
-      setListening(false);
-      alert("Could not start microphone: "+e.message);
-    }
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
+    rec.onerror=()=>setListening(false);
+    rec.onend=()=>setListening(false);
+    rec.start();recRef.current=rec;setListening(true);
   }
-  
-  function stopListening(){
-    if(recRef.current){try{recRef.current.stop();}catch(e){}}
-    setListening(false);
-  }
+  function stopListening(){recRef.current?.stop();setListening(false);}
 
-  return{listening,startListening,stopListening,micError};
+  return{listening,startListening,stopListening};
 }
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
@@ -1386,7 +1345,7 @@ function ProfileTab({profile,setProfile}){
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
-  targets:{water_glasses:10,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:55,potassium_mg:3500,magnesium_mg:320},
+  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
   conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
   restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary"],
   notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always.",
@@ -1410,7 +1369,24 @@ function App(){
   useEffect(()=>{
     async function load(){
       const p=await store.get("profile");if(p)setProfile(p);
-      const pan=await store.get("pantry");if(pan)setPantry(pan);
+      const pan=await store.get("pantry");
+      if(pan&&pan.length>0){setPantry(pan);}
+      else{
+        const defaultPantry=[
+          {id:"silk-soy",name:"Silk Original Soy Milk (green carton)",qty:"300mg Ca/cup · 115mg Na/cup · 7g protein",cat:"Dairy & Alternatives"},
+          {id:"tj-kefir",name:"TJ's Plain Low-Fat Kefir",qty:"440mg Ca/cup · 125mg Na · 11g protein",cat:"Dairy & Alternatives"},
+          {id:"tj-swiss",name:"Swiss Cheese",qty:"224mg Ca/oz · 54mg Na · 8g protein",cat:"Dairy & Alternatives"},
+          {id:"tj-multigrain",name:"TJ's Multigrain Bread",qty:"150mg Na/slice · 110 cal",cat:"Grains & Legumes"},
+          {id:"ortiz-tuna",name:"Ortiz Bonito del Norte Tuna",qty:"280mg Na/half can · 22g protein",cat:"Fish & Seafood"},
+          {id:"tj-mussels",name:"TJ's Lightly Smoked Mussels",qty:"HIGH Na 480mg/tin · 18g protein",cat:"Fish & Seafood"},
+          {id:"tj-tofu",name:"TJ's High Protein Super Firm Tofu",qty:"55mg Na/3oz · 11g protein",cat:"Protein"},
+          {id:"sardines",name:"Sardines with bones",qty:"High Ca · great omega-3",cat:"Fish & Seafood"},
+          {id:"eggs",name:"Eggs",qty:"6g protein each · low oxalate",cat:"Protein"},
+          {id:"avocado",name:"Avocado",qty:"Low oxalate · healthy fat",cat:"Produce"},
+        ];
+        setPantry(defaultPantry);
+        store.set("pantry",defaultPantry);
+      }
       const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
       const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
       const m=await store.get("master");if(m)setMaster(m);
