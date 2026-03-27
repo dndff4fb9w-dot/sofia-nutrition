@@ -281,18 +281,81 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
   }
 }
 
-async function parseFood(desc) {
-  const sys = `You are a nutrition database. Return ONLY a JSON object, no other text:
+// Known products with exact values
+const KNOWN_PRODUCTS = [
+  {names:["silk soy milk","silk original soy milk","silk","soy milk silk"],per_cup:{sodium:115,calcium:300,calories:110,protein:7,potassium:440,magnesium:25,oxalate:"low"}},
+  {names:["kefir","tj kefir","trader joe kefir","plain kefir"],per_cup:{sodium:125,calcium:440,calories:110,protein:11,potassium:400,magnesium:30,oxalate:"low"}},
+  {names:["swiss cheese","tj swiss"],per_oz:{sodium:54,calcium:224,calories:108,protein:8,potassium:22,magnesium:10,oxalate:"low"}},
+  {names:["multigrain bread","tj multigrain","multigrain toast"],per_slice:{sodium:150,calcium:20,calories:110,protein:4,potassium:80,magnesium:20,oxalate:"low"}},
+  {names:["ortiz tuna","bonito del norte","ortiz"],per_half_can:{sodium:280,calcium:15,calories:130,protein:22,potassium:200,magnesium:30,oxalate:"low"}},
+  {names:["tj mussels","smoked mussels","lightly smoked mussels"],per_tin:{sodium:480,calcium:60,calories:150,protein:18,potassium:300,magnesium:40,oxalate:"low"}},
+];
+
+function checkKnownProducts(desc) {
+  const d = desc.toLowerCase();
+  for (const product of KNOWN_PRODUCTS) {
+    for (const name of product.names) {
+      if (d.includes(name)) {
+        // Try to figure out quantity from description
+        const ozMatch = d.match(/(\d+)\s*oz/);
+        const cupMatch = d.match(/(\d+\.?\d*)\s*cup/);
+        const sliceMatch = d.match(/(\d+)\s*slice/);
+        
+        let multiplier = 1;
+        let unit = "serving";
+        
+        if (product.per_cup) {
+          if (ozMatch) { multiplier = parseInt(ozMatch[1]) / 8; unit = ozMatch[1]+"oz"; }
+          else if (cupMatch) { multiplier = parseFloat(cupMatch[1]); unit = cupMatch[1]+" cup"; }
+          else { multiplier = 1; unit = "1 cup"; }
+          const v = product.per_cup;
+          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data ("+unit+")"};
+        }
+        if (product.per_oz && ozMatch) {
+          multiplier = parseInt(ozMatch[1]);
+          const v = product.per_oz;
+          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data"};
+        }
+        if (product.per_slice) {
+          multiplier = sliceMatch ? parseInt(sliceMatch[1]) : 1;
+          const v = product.per_slice;
+          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data"};
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function parseFood(desc, pantry=[]) {
+  // Check known products first
+  const known = checkKnownProducts(desc);
+  if (known) return known;
+  
+  // Check pantry for matches
+  if (pantry && pantry.length > 0) {
+    const d = desc.toLowerCase();
+    const match = pantry.find(p => p.name && d.includes(p.name.toLowerCase().split(" ").slice(0,3).join(" ")));
+    if (match && match.qty) {
+      // Parse calcium from qty string like "300mg Ca/cup"
+      const caMatch = match.qty.match(/(\d+)mg Ca/);
+      const naMatch = match.qty.match(/(\d+)mg Na/);
+      const proMatch = match.qty.match(/(\d+)g protein/);
+      if (caMatch || naMatch) {
+        return {name: match.name, sodium: naMatch?parseInt(naMatch[1]):0, calcium: caMatch?parseInt(caMatch[1]):0, calories: 100, protein: proMatch?parseInt(proMatch[1]):0, potassium: 0, magnesium: 0, oxalate: "low", notes: "Values from your pantry"};
+      }
+    }
+  }
+  
+  const sys = `Nutrition database. Return ONLY JSON object:
 {"name":"food name","sodium":0,"calcium":0,"calories":0,"protein":0,"potassium":0,"magnesium":0,"oxalate":"low","notes":"brief note"}
-Numbers in mg except calories(kcal) and protein(g). Silk soy milk: 300Ca, 115Na, 7pro per cup. Pescatarian only.`;
+mg except calories(kcal) protein(g). Pescatarian only. No meat.`;
   try {
     const raw = await callClaude([{ role: "user", content: "Nutrition for: " + desc }], sys);
     if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
-    // Find JSON object in response
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return {error: "No data returned — try again"};
-    const parsed = JSON.parse(match[0]);
-    return parsed;
+    const match2 = raw.match(/\{[\s\S]*\}/);
+    if (!match2) return {error: "No data returned — try again"};
+    return JSON.parse(match2[0]);
   } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
@@ -608,7 +671,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     }
     lastCallRef.current=now;
     setParsing(true);setParseResult(null);setCoachTip(null);
-    const result=await parseFood(text);
+    const result=await parseFood(text, pantry||[]);
     if(!result||result.error){
       setParseResult({error: result?.error || "API call failed — tap Add to retry"});
       setParsing(false);
@@ -772,7 +835,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                 <button className="food-delete" style={{fontSize:12,opacity:.5,padding:"2px 6px"}} onClick={async()=>{
                   const newDesc=prompt("Edit food (will recalculate nutrition):",f.name);
                   if(!newDesc||!newDesc.trim())return;
-                  const result=await parseFood(newDesc.trim());
+                  const result=await parseFood(newDesc.trim(), pantry||[]);
                   if(result&&!result.error){
                     const updated={...f,name:result.name||newDesc.trim(),nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},oxalate:result.oxalate||f.oxalate,notes:result.notes};
                     const u=foodLog.map(x=>x.id===f.id?updated:x);
