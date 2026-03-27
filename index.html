@@ -769,7 +769,18 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                 {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:4,fontStyle:"italic"}}>{f.notes}</div>}
               </div>
               <div style={{display:"flex",gap:4}}>
-                <button className="food-delete" style={{fontSize:12,opacity:.4,padding:"2px 6px"}} onClick={()=>{const newName=prompt("Edit food name:",f.name);if(newName&&newName.trim()){const u=foodLog.map(x=>x.id===f.id?{...x,name:newName.trim()}:x);setFoodLog(u);store.set("food-log-"+todayKey(),u);}}}>✏️</button>
+                <button className="food-delete" style={{fontSize:12,opacity:.5,padding:"2px 6px"}} onClick={async()=>{
+                  const newDesc=prompt("Edit food (will recalculate nutrition):",f.name);
+                  if(!newDesc||!newDesc.trim())return;
+                  const result=await parseFood(newDesc.trim());
+                  if(result&&!result.error){
+                    const updated={...f,name:result.name||newDesc.trim(),nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},oxalate:result.oxalate||f.oxalate,notes:result.notes};
+                    const u=foodLog.map(x=>x.id===f.id?updated:x);
+                    setFoodLog(u);store.set("food-log-"+todayKey(),u);
+                  } else {
+                    alert("Could not recalculate. Try again.");
+                  }
+                }}>✏️</button>
                 <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
               </div>
             </div>
