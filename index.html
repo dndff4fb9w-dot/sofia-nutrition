@@ -229,7 +229,7 @@ async function callClaude(messages, system, retries=3) {
       const r = await fetchWithTimeout("/.netlify/functions/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1000, system, messages }),
+        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, system, messages }),
       });
       if (!r.ok) {
         const err = await r.text();
@@ -282,16 +282,18 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
 }
 
 async function parseFood(desc) {
-  const sys = `Nutrition database. Sofia is STRICTLY pescatarian — only fish, seafood, eggs, dairy, plant proteins. NEVER suggest chicken, beef, pork or any meat. Return ONLY valid JSON, no markdown:
-{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence for kidney stone prevention — never suggest meat"}
-All mg except calories(kcal) and protein(g). Use brand-specific values when brand is mentioned (e.g. Silk soy milk = 300mg Ca, 115mg Na, 7g protein per cup).`;
+  const sys = `You are a nutrition database. Return ONLY a JSON object, no other text:
+{"name":"food name","sodium":0,"calcium":0,"calories":0,"protein":0,"potassium":0,"magnesium":0,"oxalate":"low","notes":"brief note"}
+Numbers in mg except calories(kcal) and protein(g). Silk soy milk: 300Ca, 115Na, 7pro per cup. Pescatarian only.`;
   try {
-    const raw = await callClaude([{ role: "user", content: desc }], sys);
+    const raw = await callClaude([{ role: "user", content: "Nutrition for: " + desc }], sys);
     if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+    // Find JSON object in response
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return {error: "No data returned — try again"};
+    const parsed = JSON.parse(match[0]);
     return parsed;
-  } catch(e) { return {error: "Could not parse: " + e.message}; }
+  } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
 async function parseFoodFromImage(b64, mediaType) {
@@ -306,8 +308,7 @@ All mg except calories(kcal) and protein(g). Be specific about what you see.`;
 }
 
 async function getCoachTip(foodName, totals, targets, proteinTarget) {
-  const sys = `You are Sofia's nutrition coach. She is STRICTLY pescatarian — NEVER suggest chicken, beef, pork, turkey or any meat. Only fish, seafood, eggs, dairy, plant proteins. Give ONE short, specific, actionable tip. Max 2 sentences. Be direct and personal. Reference specific numbers. Focus on kidney stones, protein targets, or what she needs next.
-Context: kidney stones, sodium ≤${targets.sodium_mg}mg/day, calcium ~${targets.calcium_mg}mg with meals, protein target today ${proteinTarget}g. NEVER suggest meat.`;
+  const sys = `Kidney stone nutrition coach. Pescatarian only (fish/eggs/dairy/plants, NO meat). Na<${targets.sodium_mg}mg, Ca~${targets.calcium_mg}mg, protein ${proteinTarget}g today. One tip, 2 sentences max.`;
   const msg = `She just logged: ${foodName}
 Running totals: sodium ${totals.sodium}mg, calcium ${totals.calcium}mg, protein ${totals.protein}g, magnesium ${totals.magnesium}mg, calories ${totals.calories}kcal.
 What's the most important thing she should do or eat next?`;
