@@ -333,17 +333,58 @@ function useVoice(onResult){
 
   function startListening(){
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
+    if(!SpeechRecognition){alert("Voice input requires Safari on iPhone.");return;}
+    if(recRef.current){try{recRef.current.stop();}catch(e){}}
     const rec=new SpeechRecognition();
-    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
-    rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
-    rec.onerror=()=>setListening(false);
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;rec.maxAlternatives=1;
+    rec.onstart=()=>setListening(true);
+    rec.onresult=e=>{
+      if(e.results&&e.results.length>0){const t=e.results[0][0].transcript;if(t&&t.trim())onResult(t.trim());}
+      setListening(false);
+    };
+    rec.onerror=e=>{
+      setListening(false);
+      if(e.error==="not-allowed")alert("Microphone blocked. Go to iPhone Settings → Safari → Microphone → Allow.");
+    };
     rec.onend=()=>setListening(false);
-    rec.start();recRef.current=rec;setListening(true);
+    try{rec.start();recRef.current=rec;}catch(e){setListening(false);}
   }
-  function stopListening(){recRef.current?.stop();setListening(false);}
+  function stopListening(){if(recRef.current){try{recRef.current.stop();}catch(e){}}setListening(false);}
 
   return{listening,startListening,stopListening};
+}
+
+// ─── Universal mic button component ──────────────────────────────────────────
+function MicBtn({onResult,size=38}){
+  const{listening,startListening,stopListening}=useVoice(onResult);
+  return(
+    <button className={`mic-btn ${listening?"listening":"idle"}`} 
+      style={{width:size,height:size,flexShrink:0}}
+      onClick={listening?stopListening:startListening} type="button">
+      {listening?"🔴":"🎤"}
+    </button>
+  );
+}
+
+// ─── Universal photo button component ────────────────────────────────────────
+function PhotoBtn({onPhoto,size=38}){
+  const inputRef=useRef(null);
+  function handleFile(e){
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const b64=ev.target.result.split(",")[1];
+      onPhoto(b64,file.type||"image/jpeg");
+    };
+    reader.readAsDataURL(file);
+    e.target.value="";
+  }
+  return(
+    <label style={{width:size,height:size,borderRadius:"50%",background:"var(--cream2)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,border:"1px solid var(--border)"}}>
+      📷
+      <input ref={inputRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
+    </label>
+  );
 }
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
@@ -727,7 +768,10 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                 </div>
                 {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:4,fontStyle:"italic"}}>{f.notes}</div>}
               </div>
-              <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
+              <div style={{display:"flex",gap:4}}>
+                <button className="food-delete" style={{fontSize:12,opacity:.4,padding:"2px 6px"}} onClick={()=>{const newName=prompt("Edit food name:",f.name);if(newName&&newName.trim()){const u=foodLog.map(x=>x.id===f.id?{...x,name:newName.trim()}:x);setFoodLog(u);store.set("food-log-"+todayKey(),u);}}}>✏️</button>
+                <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
+              </div>
             </div>
           ))}
         </div>
@@ -762,14 +806,14 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
             {listening?"🔴":"🎤"}
           </button>
           <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16}}>
-            📷<input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handlePhotoFood(e.target.files[0])} disabled={parsing}/>
+            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>handlePhotoFood(e.target.files[0])} disabled={parsing}/>
           </label>
           <button className="btn btn-primary" onClick={()=>{const v=document.querySelector('.add-food-input')?.value||foodInput;if(v.trim())setFoodInput(v);handleAddFood(v);}} disabled={parsing}>
             {parsing?<span className="loading-spin"/>:"Add"}
           </button>
         </div>
         <div className="add-note">Type, speak 🎤, or photograph 📷 your food.</div>
-        {cooldown>0&&<div style={{background:"var(--gold2)",border:"1px solid var(--gold)",borderRadius:8,padding:"8px 12px",marginTop:7,fontSize:11,color:"var(--gold)",textAlign:"center"}}>⏱ Please wait {cooldown}s before adding another item</div>}
+        
         {parseResult&&parseResult.error&&(
           <div style={{background:"var(--terra2)",border:"1px solid var(--terra)",borderRadius:8,padding:"9px 12px",marginTop:7,fontSize:11,color:"var(--terra)"}}>
             ⚠️ {parseResult.error} — please tap Add to try again
@@ -1029,7 +1073,7 @@ function MedsTab({master,setMaster}){
           <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:10}}>Add by photo (optional)</div>
           {!scanPreview?(
             <div className="photo-zone" style={{marginBottom:12}}>
-              <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoScan(e.target.files[0])}/>
+              <input type="file" accept="image/*" onChange={e=>handlePhotoScan(e.target.files[0])}/>
               <div style={{fontSize:24,marginBottom:5}}>📸</div>
               <div style={{fontSize:11,color:"var(--ink3)"}}>Photograph label — Claude pre-fills the form</div>
             </div>
@@ -1103,7 +1147,7 @@ function MedsTab({master,setMaster}){
 }
 
 // ─── SCAN TAB ────────────────────────────────────────────────────────────────
-function ScanTab({profile}){
+function ScanTab({profile,onSaveToPantry}){
   const[scanning,setScanning]=useState(false);
   const[preview,setPreview]=useState(null);
   const[result,setResult]=useState(null);
@@ -1132,10 +1176,13 @@ Return ONLY valid JSON:
       <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Photograph any product for an instant verdict — food, skincare, supplements.</p>
       {!preview?(
         <>
-          <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
-            value={question} onChange={e=>setQuestion(e.target.value)}/>
+          <div style={{display:"flex",gap:6,marginBottom:9}}>
+            <input className="text-input" style={{flex:1}} placeholder="Optional: ask something specific…"
+              value={question} onChange={e=>setQuestion(e.target.value)}/>
+            <MicBtn onResult={t=>setQuestion(p=>p?p+" "+t:t)}/>
+          </div>
           <div className="photo-zone">
-            <input type="file" accept="image/*" capture="environment" onChange={e=>scanProduct(e.target.files[0])}/>
+            <input type="file" accept="image/*" onChange={e=>scanProduct(e.target.files[0])}/>
             <div style={{fontSize:26,marginBottom:5}}>📷</div>
             <div style={{fontSize:11,color:"var(--ink3)",lineHeight:1.5}}><strong style={{color:"var(--green)",display:"block",marginBottom:3}}>Photograph any label</strong>Food, skincare, or supplement — Claude checks against your health profile.</div>
           </div>
@@ -1164,9 +1211,15 @@ Return ONLY valid JSON:
                 {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
                 {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
               </div>
-              <div style={{display:"flex",gap:7,marginTop:11}}>
+              <div style={{display:"flex",gap:7,marginTop:11,flexWrap:"wrap"}}>
                 <button className="btn btn-primary" onClick={reset}>Scan another</button>
                 <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+                {result.verdict!=="no"&&onSaveToPantry&&(
+                  <button className="btn btn-outline" style={{background:"var(--green3)",color:"var(--green)",borderColor:"var(--green2)"}}
+                    onClick={()=>{onSaveToPantry(result);reset();}}>
+                    🥫 Save to Pantry
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1231,12 +1284,16 @@ function PantryTab({pantry,setPantry}){
       <p className="section-title">Pantry</p>
       <div className="add-food-area" style={{marginBottom:14}}>
         <div className="add-food-title">Add item</div>
-        <div className="input-row">
+        <div className="input-row" style={{marginBottom:6}}>
           <input className="text-input" style={{flex:2}} placeholder="Item name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
-          <input className="text-input" style={{flex:1,maxWidth:80}} placeholder="Qty" value={qty} onChange={e=>setQty(e.target.value)}/>
+          <MicBtn onResult={t=>setName(p=>p?p+" "+t:t)}/>
+        </div>
+        <div className="input-row">
+          <input className="text-input" style={{flex:1}} placeholder="Notes / qty / Ca mg" value={qty} onChange={e=>setQty(e.target.value)}/>
           <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{flex:1}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
           <button className="btn btn-primary" onClick={addItem}>Add</button>
         </div>
+        <div className="add-note">Scan a label in the Scan tab to save products automatically.</div>
       </div>
       {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add what you have at home</div></div>)
       :CATS.map(c=>grouped[c].length>0&&(
@@ -1317,6 +1374,18 @@ function ProfileTab({profile,setProfile}){
     <div className="section">
       <p className="section-title">Profile</p>
       <div className="profile-section">
+        <div className="profile-section-title">Personal information</div>
+        <div className="target-grid">
+          <div className="target-card"><div className="target-label">Name</div><input className="target-input" value={profile.name||""} onChange={e=>{const u={...profile,name:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
+          <div className="target-card"><div className="target-label">Age</div><input className="target-input" type="number" value={profile.age||""} onChange={e=>{const u={...profile,age:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
+          <div className="target-card"><div className="target-label">Height (cm)</div><input className="target-input" type="number" value={profile.height_cm||""} onChange={e=>{const u={...profile,height_cm:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
+          <div className="target-card"><div className="target-label">Weight (kg)</div><input className="target-input" type="number" value={profile.weight_kg||""} onChange={e=>{const u={...profile,weight_kg:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
+          <div className="target-card"><div className="target-label">Blood type</div><input className="target-input" value={profile.blood_type||""} onChange={e=>{const u={...profile,blood_type:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
+          <div className="target-card"><div className="target-label">Doctor</div><input className="target-input" value={profile.doctor||""} onChange={e=>{const u={...profile,doctor:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
+        </div>
+        {profile.weight_kg>0&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:8}}>Protein targets — Sedentary: {Math.round(profile.weight_kg*1.25)}g · Light: {Math.round(profile.weight_kg*1.7)}g · Moderate: {Math.round(profile.weight_kg*1.8)}g · Intense: {Math.round(profile.weight_kg*2.0)}g</div>}
+      </div>
+      <div className="profile-section">
         <div className="profile-section-title">Daily targets</div>
         <div className="target-grid">
           {[{key:"water_glasses",label:"Water",unit:"glasses"},{key:"sodium_mg",label:"Sodium max",unit:"mg"},{key:"calcium_mg",label:"Calcium",unit:"mg"},{key:"magnesium_mg",label:"Magnesium",unit:"mg"},{key:"potassium_mg",label:"Potassium",unit:"mg"},{key:"calories",label:"Base calories",unit:"kcal"},{key:"protein_g",label:"Base protein",unit:"g"}].map(t=>(
@@ -1346,9 +1415,14 @@ function ProfileTab({profile,setProfile}){
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
+  age:54,
+  height_cm:160,
+  weight_kg:44,
+  blood_type:"",
+  doctor:"Dra. Zanchetta, Maria Belen",
   targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
-  conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
-  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary"],
+  conditions:["Kidney stones (bilateral, multiple small)","Idiopathic Hypercalciuria","HRT (started December)","Subscapular nerve — recovering"],
+  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian — no meat"],
   notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always.",
 };
 
@@ -1433,7 +1507,7 @@ function App(){
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile}/>}
+        {tab==="scan"&&<ScanTab profile={profile} onSaveToPantry={(r)=>{const item={id:Date.now(),name:r.product_name||"Scanned product",qty:Object.entries(r.key_nutrients||{}).map(([k,v])=>k+": "+v).join(" · "),cat:"Other"};const u=[...pantry,item];setPantry(u);store.set("pantry",u);}}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
