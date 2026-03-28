@@ -1393,7 +1393,7 @@ function MedicalTab({medical,setMedical}){
             }
           </div>
           {editing===s.key
-            ?<><div className="input-row" style={{marginBottom:6}}><MicBtn onResult={t=>setEditVal(p=>p?p+" "+t:t)}/><span style={{fontSize:10,color:"var(--ink3)"}}>Tap mic to dictate</span></div><textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/></>
+            ?<div><div className="input-row" style={{marginBottom:6}}><MicBtn onResult={t=>setEditVal(p=>p?p+" "+t:t)}/><span style={{fontSize:10,color:"var(--ink3)"}}>Tap mic to dictate</span></div><textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/></div>
             :<div className="med-text">{medical[s.key]}</div>
           }
         </div>
@@ -1667,6 +1667,13 @@ function App(){
     if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
   },[]);
 
+  function handleScanSave(r,dest){
+    const item={id:Date.now(),name:r.product_name||"Scanned product",notes:r.serving_advice||"",nutrients:{},cat:"other"};
+    if(dest==="pantry"){const u=[...pantry,item];setPantry(u);store.set("pantry",u);}
+    else if(dest==="skin"){alert("Saved! (Skincare tab integration coming soon)");}
+    else if(dest==="medical"){alert("Saved! (Medical tab integration coming soon)");}
+    else if(dest==="meds"){alert("Saved! (Meds tab integration coming soon)");}
+  }
   if(!loaded)return null;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
@@ -1696,28 +1703,7 @@ function App(){
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile} onSave={(r,dest)=>{
-  const nutrients={};
-  Object.entries(r.key_nutrients||{}).forEach(([k,v])=>{
-    const n=parseFloat(v);
-    if(!isNaN(n)){
-      if(k.toLowerCase().indexOf("sodium")!==-1||k.toLowerCase()==="na")nutrients.sodium=n;
-      if(k.toLowerCase().indexOf("calcium")!==-1||k.toLowerCase()==="ca")nutrients.calcium=n;
-      if(k.toLowerCase().indexOf("protein")!==-1)nutrients.protein=n;
-      if(k.toLowerCase().indexOf("calorie")!==-1)nutrients.calories=n;
-    }
-  });
-  if(dest==="pantry"){
-    const item={id:Date.now(),name:r.product_name||"Scanned product",notes:r.serving_advice||"",nutrients,cat:"other"};
-    const u=[...pantry,item];setPantry(u);store.set("pantry",u);
-  } else if(dest==="skin"){
-    alert("Saved to Skincare notes! (full Skincare save coming soon)");
-  } else if(dest==="medical"){
-    alert("Saved to Medical notes! (full Medical save coming soon)");
-  } else if(dest==="meds"){
-    alert("Saved to Meds! (full Meds save coming soon)");
-  }
-}}/>}
+        {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
