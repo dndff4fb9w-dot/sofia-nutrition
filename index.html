@@ -127,13 +127,13 @@ const DEFAULT_MEDICAL = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getProteinTarget(exLogs){
-  if(!exLogs||!exLogs.length)return 55;
+  if(!exLogs||!exLogs.length)return 65;
   const best=exLogs.reduce((m,e)=>{
     const a=ACTIVITIES.find(x=>x.id===e.activityId);
     const score={recovery:0,light:1,moderate:2,intense:3}[a?.intensity||"recovery"]||0;
     return Math.max(m,score);
   },0);
-  return[55,75,80,90][best];
+  return[65,75,80,90][best];
 }
 function getCalTarget(exLogs,base=1800){
   if(!exLogs||!exLogs.length)return base;
@@ -281,81 +281,135 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
   }
 }
 
-// Known products with exact values
-const KNOWN_PRODUCTS = [
-  {names:["silk soy milk","silk original soy milk","silk","soy milk silk"],per_cup:{sodium:115,calcium:300,calories:110,protein:7,potassium:440,magnesium:25,oxalate:"low"}},
-  {names:["kefir","tj kefir","trader joe kefir","plain kefir"],per_cup:{sodium:125,calcium:440,calories:110,protein:11,potassium:400,magnesium:30,oxalate:"low"}},
-  {names:["swiss cheese","tj swiss"],per_oz:{sodium:54,calcium:224,calories:108,protein:8,potassium:22,magnesium:10,oxalate:"low"}},
-  {names:["multigrain bread","tj multigrain","multigrain toast"],per_slice:{sodium:150,calcium:20,calories:110,protein:4,potassium:80,magnesium:20,oxalate:"low"}},
-  {names:["ortiz tuna","bonito del norte","ortiz"],per_half_can:{sodium:280,calcium:15,calories:130,protein:22,potassium:200,magnesium:30,oxalate:"low"}},
-  {names:["tj mussels","smoked mussels","lightly smoked mussels"],per_tin:{sodium:480,calcium:60,calories:150,protein:18,potassium:300,magnesium:40,oxalate:"low"}},
+// ─── Oxalate guesser ──────────────────────────────────────────────────────────
+function guessOxalate(text){
+  var t=text.toLowerCase();
+  if(t.indexOf("spinach")!==-1||t.indexOf("chard")!==-1||t.indexOf("beet")!==-1||t.indexOf("sweet potato")!==-1||t.indexOf("almond")!==-1||t.indexOf("cashew")!==-1||t.indexOf("chocolate")!==-1||t.indexOf("rhubarb")!==-1||t.indexOf("soy flour")!==-1||t.indexOf("kale")!==-1)return"high";
+  if(t.indexOf("tea")!==-1||t.indexOf("berry")!==-1||t.indexOf("berries")!==-1||t.indexOf("strawberry")!==-1||t.indexOf("raspberry")!==-1||t.indexOf("blueberry")!==-1||t.indexOf("blackberry")!==-1||t.indexOf("kiwi")!==-1||t.indexOf("pumpkin seed")!==-1||t.indexOf("sunflower seed")!==-1||t.indexOf("brown rice")!==-1)return"med";
+  return"low";
+}
+
+// ─── Known products database ──────────────────────────────────────────────────
+const KNOWN = [
+  {k:["silk soy milk","silk original","silk soy","soy milk silk","silk"],cup:{na:115,ca:300,cal:110,pro:7,pot:440,mg:25},ox:"low"},
+  {k:["kefir","tj kefir","plain kefir","low-fat kefir","lowfat kefir"],cup:{na:125,ca:440,cal:110,pro:11,pot:400,mg:30},ox:"low"},
+  {k:["swiss cheese","tj swiss","swiss"],oz:{na:54,ca:224,cal:108,pro:8,pot:22,mg:10},ox:"low"},
+  {k:["multigrain bread","multigrain toast","tj multigrain","multigrain"],slice:{na:150,ca:20,cal:110,pro:4,pot:80,mg:20},ox:"low"},
+  {k:["ortiz tuna","bonito del norte","ortiz"],half_can:{na:280,ca:15,cal:130,pro:22,pot:200,mg:30},ox:"low"},
+  {k:["tj mussels","smoked mussels","lightly smoked mussels","mussels"],tin:{na:480,ca:60,cal:150,pro:18,pot:300,mg:40},ox:"low"},
+  {k:["super firm tofu","tj tofu","high protein tofu","tofu"],per3oz:{na:55,ca:200,cal:90,pro:11,pot:150,mg:30},ox:"low"},
+  {k:["sardines","sardine"],per_can:{na:282,ca:351,cal:190,pro:22,pot:397,mg:36},ox:"low"},
+  {k:["egg","boiled egg","fried egg","eggs"],per_egg:{na:63,ca:28,cal:78,pro:6,pot:67,mg:6},ox:"low"},
+  {k:["avocado"],per_half:{na:5,ca:12,cal:120,pro:1.5,pot:487,mg:22},ox:"low"},
+  {k:["greek yogurt","plain yogurt","yogurt"],cup:{na:55,ca:200,cal:100,pro:17,pot:240,mg:20},ox:"low"},
 ];
 
-function checkKnownProducts(desc) {
-  const d = desc.toLowerCase();
-  for (const product of KNOWN_PRODUCTS) {
-    for (const name of product.names) {
-      if (d.includes(name)) {
-        // Try to figure out quantity from description
-        const ozMatch = d.match(/(\d+)\s*oz/);
-        const cupMatch = d.match(/(\d+\.?\d*)\s*cup/);
-        const sliceMatch = d.match(/(\d+)\s*slice/);
-        
-        let multiplier = 1;
-        let unit = "serving";
-        
-        if (product.per_cup) {
-          if (ozMatch) { multiplier = parseInt(ozMatch[1]) / 8; unit = ozMatch[1]+"oz"; }
-          else if (cupMatch) { multiplier = parseFloat(cupMatch[1]); unit = cupMatch[1]+" cup"; }
-          else { multiplier = 1; unit = "1 cup"; }
-          const v = product.per_cup;
-          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data ("+unit+")"};
-        }
-        if (product.per_oz && ozMatch) {
-          multiplier = parseInt(ozMatch[1]);
-          const v = product.per_oz;
-          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data"};
-        }
-        if (product.per_slice) {
-          multiplier = sliceMatch ? parseInt(sliceMatch[1]) : 1;
-          const v = product.per_slice;
-          return {name: desc, sodium: Math.round(v.sodium*multiplier), calcium: Math.round(v.calcium*multiplier), calories: Math.round(v.calories*multiplier), protein: Math.round(v.protein*multiplier*10)/10, potassium: Math.round(v.potassium*multiplier), magnesium: Math.round(v.magnesium*multiplier), oxalate: v.oxalate, notes: "Values from known product data"};
-        }
-      }
+function getNum(str, pattern) {
+  if (!str) return null;
+  var m = str.match(pattern);
+  return m ? parseFloat(m[1]) : null;
+}
+
+function lookupKnown(desc) {
+  var d = desc.toLowerCase();
+  for (var i = 0; i < KNOWN.length; i++) {
+    var prod = KNOWN[i];
+    var found = false;
+    for (var j = 0; j < prod.k.length; j++) {
+      if (d.indexOf(prod.k[j]) !== -1) { found = true; break; }
+    }
+    if (!found) continue;
+
+    var mult = 1;
+    var note = "";
+
+    if (prod.cup) {
+      var oz = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*oz/);
+      var cups = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*cup/);
+      if (oz) { mult = oz / 8; note = oz + "oz"; }
+      else if (cups) { mult = cups; note = cups + " cup"; }
+      else { mult = 1; note = "1 cup est."; }
+      var v = prod.cup;
+      return {name: desc, sodium: Math.round(v.na*mult), calcium: Math.round(v.ca*mult), calories: Math.round(v.cal*mult), protein: Math.round(v.pro*mult*10)/10, potassium: Math.round(v.pot*mult), magnesium: Math.round(v.mg*mult), oxalate: prod.ox, notes: "Label values — " + note};
+    }
+    if (prod.oz) {
+      var oz2 = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*oz/);
+      mult = oz2 || 1;
+      var v2 = prod.oz;
+      return {name: desc, sodium: Math.round(v2.na*mult), calcium: Math.round(v2.ca*mult), calories: Math.round(v2.cal*mult), protein: Math.round(v2.pro*mult*10)/10, potassium: Math.round(v2.pot*mult), magnesium: Math.round(v2.mg*mult), oxalate: prod.ox, notes: "Label values — " + mult + "oz"};
+    }
+    if (prod.slice) {
+      var sl = getNum(d, /([0-9]+)\s*slice/) || 1;
+      var v3 = prod.slice;
+      return {name: desc, sodium: Math.round(v3.na*sl), calcium: Math.round(v3.ca*sl), calories: Math.round(v3.cal*sl), protein: Math.round(v3.pro*sl*10)/10, potassium: Math.round(v3.pot*sl), magnesium: Math.round(v3.mg*sl), oxalate: prod.ox, notes: "Label values — " + sl + " slice"};
+    }
+    if (prod.per_egg) {
+      var eggs = getNum(d, /([0-9]+)\s*egg/) || 1;
+      var v4 = prod.per_egg;
+      return {name: desc, sodium: Math.round(v4.na*eggs), calcium: Math.round(v4.ca*eggs), calories: Math.round(v4.cal*eggs), protein: Math.round(v4.pro*eggs*10)/10, potassium: Math.round(v4.pot*eggs), magnesium: Math.round(v4.mg*eggs), oxalate: prod.ox, notes: "Label values — " + eggs + " egg(s)"};
+    }
+    if (prod.per_can) {
+      var v5 = prod.per_can;
+      return {name: desc, sodium: v5.na, calcium: v5.ca, calories: v5.cal, protein: v5.pro, potassium: v5.pot, magnesium: v5.mg, oxalate: prod.ox, notes: "Label values — 1 can"};
+    }
+    if (prod.half_can) {
+      var v6 = prod.half_can;
+      return {name: desc, sodium: v6.na, calcium: v6.ca, calories: v6.cal, protein: v6.pro, potassium: v6.pot, magnesium: v6.mg, oxalate: prod.ox, notes: "Label values — half can"};
+    }
+    if (prod.tin) {
+      var v7 = prod.tin;
+      return {name: desc, sodium: v7.na, calcium: v7.ca, calories: v7.cal, protein: v7.pro, potassium: v7.pot, magnesium: v7.mg, oxalate: prod.ox, notes: "Label values — 1 tin"};
+    }
+    if (prod.per3oz) {
+      var v8 = prod.per3oz;
+      return {name: desc, sodium: v8.na, calcium: v8.ca, calories: v8.cal, protein: v8.pro, potassium: v8.pot, magnesium: v8.mg, oxalate: prod.ox, notes: "Label values — 3oz"};
+    }
+    if (prod.per_half) {
+      var halves = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*avocado/) || 1;
+      var v9 = prod.per_half;
+      return {name: desc, sodium: Math.round(v9.na*halves), calcium: Math.round(v9.ca*halves), calories: Math.round(v9.cal*halves), protein: Math.round(v9.pro*halves*10)/10, potassium: Math.round(v9.pot*halves), magnesium: Math.round(v9.mg*halves), oxalate: prod.ox, notes: "Label values"};
     }
   }
   return null;
 }
 
-async function parseFood(desc, pantry=[]) {
-  // Check known products first
-  const known = checkKnownProducts(desc);
-  if (known) return known;
-  
-  // Check pantry for matches
-  if (pantry && pantry.length > 0) {
-    const d = desc.toLowerCase();
-    const match = pantry.find(p => p.name && d.includes(p.name.toLowerCase().split(" ").slice(0,3).join(" ")));
-    if (match && match.qty) {
-      // Parse calcium from qty string like "300mg Ca/cup"
-      const caMatch = match.qty.match(/(\d+)mg Ca/);
-      const naMatch = match.qty.match(/(\d+)mg Na/);
-      const proMatch = match.qty.match(/(\d+)g protein/);
-      if (caMatch || naMatch) {
-        return {name: match.name, sodium: naMatch?parseInt(naMatch[1]):0, calcium: caMatch?parseInt(caMatch[1]):0, calories: 100, protein: proMatch?parseInt(proMatch[1]):0, potassium: 0, magnesium: 0, oxalate: "low", notes: "Values from your pantry"};
-      }
+function lookupPantry(desc, pantry) {
+  if (!pantry || !pantry.length) return null;
+  var d = desc.toLowerCase();
+  for (var i = 0; i < pantry.length; i++) {
+    var item = pantry[i];
+    if (!item.name) continue;
+    // Match if any significant word from item name appears in description
+    var itemName = item.name.toLowerCase();
+    var words = itemName.split(" ").filter(function(w){return w.length>3;});
+    var matchCount = 0;
+    for (var w = 0; w < words.length; w++) {
+      if (d.indexOf(words[w]) !== -1) matchCount++;
+    }
+    if (matchCount >= Math.min(2, words.length) && item.nutrients) {
+      var n = item.nutrients;
+      return {name: item.name, sodium: n.sodium||0, calcium: n.calcium||0, calories: n.calories||0, protein: n.protein||0, potassium: n.potassium||0, magnesium: n.magnesium||0, oxalate: n.oxalate||"low", notes: "From your pantry — "+item.notes};
     }
   }
-  
-  const sys = `Nutrition database. Return ONLY JSON object:
-{"name":"food name","sodium":0,"calcium":0,"calories":0,"protein":0,"potassium":0,"magnesium":0,"oxalate":"low","notes":"brief note"}
-mg except calories(kcal) protein(g). Pescatarian only. No meat.`;
+  return null;
+}
+
+async function parseFood(desc, pantry) {
+  // 1. Check known products first
+  var known = lookupKnown(desc);
+  if (known) return known;
+  // 2. Check pantry
+  var fromPantry = lookupPantry(desc, pantry);
+  if (fromPantry) return fromPantry;
+  // 3. Ask AI
+  var sys = "Nutrition database. Pescatarian only (fish/eggs/dairy/plants - NO meat). Return ONLY a JSON object, no other text: {"name":"food name","sodium":0,"calcium":0,"calories":0,"protein":0,"potassium":0,"magnesium":0,"oxalate":"low","notes":"brief note"} Numbers in mg except calories(kcal) and protein(g).";
   try {
-    const raw = await callClaude([{ role: "user", content: "Nutrition for: " + desc }], sys);
-    if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
-    const match2 = raw.match(/\{[\s\S]*\}/);
-    if (!match2) return {error: "No data returned — try again"};
-    return JSON.parse(match2[0]);
+    var raw = await callClaude([{role:"user",content:"Nutrition for: "+desc}], sys);
+    if (!raw || raw.indexOf("⚠️") === 0 || raw.indexOf("Error") === 0) return {error: raw||"Failed"};
+    var start2 = raw.indexOf("{");
+    var end2 = raw.lastIndexOf("}");
+    if (start2 === -1 || end2 === -1) return {error: "No data — try again"};
+    return JSON.parse(raw.slice(start2, end2+1));
   } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
@@ -630,7 +684,7 @@ const STYLE=`
 `;
 
 // ─── TODAY TAB ────────────────────────────────────────────────────────────────
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs}){
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
@@ -1067,11 +1121,12 @@ function InjectionsTab({injections,setInjections}){
         <div className="quick-prompts" style={{marginBottom:10}}>
           {COMMON.map((c,i)=><button key={i} className="quick-btn" onClick={()=>setName(c)}>{c}</button>)}
         </div>
-        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
+        <div className="input-row" style={{marginBottom:6}}>
           <input className="text-input" style={{flex:2}} placeholder="Procedure name" value={name} onChange={e=>setName(e.target.value)}/>
           <input className="text-input" style={{flex:1}} placeholder="Area (e.g. lips)" value={area} onChange={e=>setArea(e.target.value)}/>
+          <MicBtn onResult={t=>setName(p=>p?p+" "+t:t)}/>
         </div>
-        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
+        <div className="input-row" style={{marginBottom:6}}>
           <input className="text-input" type="date" value={date} onChange={e=>setDate(e.target.value)} style={{flex:1}}/>
           <input className="text-input" style={{flex:2}} placeholder="Notes (clinic, units, etc.)" value={notes} onChange={e=>setNotes(e.target.value)}/>
         </div>
@@ -1221,7 +1276,7 @@ function MedsTab({master,setMaster}){
 }
 
 // ─── SCAN TAB ────────────────────────────────────────────────────────────────
-function ScanTab({profile,onSaveToPantry}){
+function ScanTab({profile,onSave}){
   const[scanning,setScanning]=useState(false);
   const[preview,setPreview]=useState(null);
   const[result,setResult]=useState(null);
@@ -1285,15 +1340,25 @@ Return ONLY valid JSON:
                 {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
                 {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
               </div>
-              <div style={{display:"flex",gap:7,marginTop:11,flexWrap:"wrap"}}>
-                <button className="btn btn-primary" onClick={reset}>Scan another</button>
-                <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
-                {result.verdict!=="no"&&onSaveToPantry&&(
-                  <button className="btn btn-outline" style={{background:"var(--green3)",color:"var(--green)",borderColor:"var(--green2)"}}
-                    onClick={()=>{onSaveToPantry(result);reset();}}>
-                    🥫 Save to Pantry
-                  </button>
-                )}
+              <div style={{marginTop:11}}>
+                <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".08em",textTransform:"uppercase"}}>Save this scan to:</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:9}}>
+                  {result.verdict!=="no"&&onSave&&[
+                    {dest:"pantry",label:"🥫 Pantry",desc:"Food/supplement label"},
+                    {dest:"skin",label:"🧴 Skincare",desc:"Skincare product"},
+                    {dest:"medical",label:"🩺 Medical",desc:"Lab result or Rx"},
+                    {dest:"meds",label:"💊 Meds",desc:"Medication"},
+                  ].map(opt=>(
+                    <button key={opt.dest} className="btn btn-outline" style={{fontSize:11,padding:"7px 11px"}}
+                      onClick={()=>{onSave(result,opt.dest);reset();}}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:7}}>
+                  <button className="btn btn-primary" onClick={reset}>Scan another</button>
+                  <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+                </div>
               </div>
             </div>
           )}
@@ -1337,7 +1402,7 @@ function MedicalTab({medical,setMedical}){
             }
           </div>
           {editing===s.key
-            ?<textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/>
+            ?<><div className="input-row" style={{marginBottom:6}}><MicBtn onResult={t=>setEditVal(p=>p?p+" "+t:t)}/><span style={{fontSize:10,color:"var(--ink3)"}}>Tap mic to dictate</span></div><textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/></>
             :<div className="med-text">{medical[s.key]}</div>
           }
         </div>
@@ -1348,33 +1413,82 @@ function MedicalTab({medical,setMedical}){
 
 // ─── PANTRY TAB ──────────────────────────────────────────────────────────────
 function PantryTab({pantry,setPantry}){
-  const[name,setName]=useState("");const[qty,setQty]=useState("");const[cat,setCat]=useState("protein");
-  const CATS=["protein","dairy","vegetable","fruit","grain","condiment","other"];
-  function addItem(){if(!name.trim())return;const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];setPantry(u);store.set("pantry",u);setName("");setQty("");}
+  const[name,setName]=useState("");
+  const[notes,setNotes]=useState("");
+  const[cat,setCat]=useState("dairy");
+  const[ca,setCa]=useState("");
+  const[na,setNa]=useState("");
+  const[pro,setPro]=useState("");
+  const[cal,setCal]=useState("");
+  const[search,setSearch]=useState("");
+  const CATS=["dairy","fish","protein","grains","produce","condiment","other"];
+
+  function addItem(){
+    if(!name.trim())return;
+    const nutrients={calcium:Number(ca)||0,sodium:Number(na)||0,protein:Number(pro)||0,calories:Number(cal)||0};
+    const u=[...pantry,{id:Date.now(),name:name.trim(),notes:notes.trim(),nutrients,cat}];
+    setPantry(u);store.set("pantry",u);
+    setName("");setNotes("");setCa("");setNa("");setPro("");setCal("");
+  }
   function removeItem(id){const u=pantry.filter(p=>p.id!==id);setPantry(u);store.set("pantry",u);}
-  const grouped=CATS.reduce((a,c)=>{a[c]=pantry.filter(p=>p.cat===c);return a;},{});
+
+  const filtered=search.trim()?pantry.filter(p=>p.name.toLowerCase().indexOf(search.toLowerCase())!==-1):pantry;
+  const grouped=CATS.reduce((a,c)=>{a[c]=filtered.filter(p=>p.cat===c);return a;},{});
+
   return(
     <div className="section">
       <p className="section-title">Pantry</p>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>
+        Your food products with exact nutrition values. Scan a label in the 📷 Scan tab to add automatically.
+      </p>
+
       <div className="add-food-area" style={{marginBottom:14}}>
-        <div className="add-food-title">Add item</div>
+        <div className="add-food-title">Add item manually</div>
         <div className="input-row" style={{marginBottom:6}}>
-          <input className="text-input" style={{flex:2}} placeholder="Item name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
+          <input className="text-input" style={{flex:1}} placeholder="Product name (e.g. Silk Original Soy Milk)" value={name} onChange={e=>setName(e.target.value)}/>
           <MicBtn onResult={t=>setName(p=>p?p+" "+t:t)}/>
         </div>
-        <div className="input-row">
-          <input className="text-input" style={{flex:1}} placeholder="Notes / qty / Ca mg" value={qty} onChange={e=>setQty(e.target.value)}/>
-          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{flex:1}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
-          <button className="btn btn-primary" onClick={addItem}>Add</button>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Calcium (mg/serving)</div><input className="text-input" type="number" placeholder="e.g. 300" value={ca} onChange={e=>setCa(e.target.value)}/></div>
+          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Sodium (mg/serving)</div><input className="text-input" type="number" placeholder="e.g. 115" value={na} onChange={e=>setNa(e.target.value)}/></div>
+          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Protein (g/serving)</div><input className="text-input" type="number" placeholder="e.g. 7" value={pro} onChange={e=>setPro(e.target.value)}/></div>
+          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Calories (kcal/serving)</div><input className="text-input" type="number" placeholder="e.g. 110" value={cal} onChange={e=>setCal(e.target.value)}/></div>
         </div>
-        <div className="add-note">Scan a label in the Scan tab to save products automatically.</div>
+        <div className="input-row" style={{marginBottom:6}}>
+          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 1 cup = 240ml)" value={notes} onChange={e=>setNotes(e.target.value)}/>
+          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:100}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+        </div>
+        <button className="btn btn-primary" style={{width:"100%"}} onClick={addItem} disabled={!name.trim()}>Add to Pantry</button>
       </div>
-      {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add what you have at home</div></div>)
-      :CATS.map(c=>grouped[c].length>0&&(
+
+      {pantry.length>4&&(
+        <div className="input-row" style={{marginBottom:10}}>
+          <input className="text-input" style={{flex:1}} placeholder="Search pantry…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          {search&&<button className="btn btn-outline" onClick={()=>setSearch("")}>Clear</button>}
+        </div>
+      )}
+
+      {filtered.length===0?(
+        <div className="empty-state"><div className="empty-icon">🥫</div><div>{search?"No items match your search":"Add your regular products here or scan labels"}</div></div>
+      ):CATS.map(c=>grouped[c]&&grouped[c].length>0&&(
         <div key={c} style={{marginBottom:14}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{c}</div>
           {grouped[c].map(item=>(
-            <div className="pantry-item" key={item.id}><div><div style={{fontSize:12,color:"var(--ink)"}}>{item.name}</div>{item.qty&&<div style={{fontSize:9,color:"var(--ink3)"}}>{item.qty}</div>}</div><button className="food-delete" onClick={()=>removeItem(item.id)}>×</button></div>
+            <div className="pantry-item" key={item.id}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>
+                {item.nutrients&&(item.nutrients.calcium>0||item.nutrients.sodium>0)&&(
+                  <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>
+                    {item.nutrients.calcium>0&&<span style={{marginRight:8}}>Ca {item.nutrients.calcium}mg</span>}
+                    {item.nutrients.sodium>0&&<span style={{marginRight:8}}>Na {item.nutrients.sodium}mg</span>}
+                    {item.nutrients.protein>0&&<span style={{marginRight:8}}>{item.nutrients.protein}g protein</span>}
+                    {item.nutrients.calories>0&&<span>{item.nutrients.calories} cal</span>}
+                  </div>
+                )}
+                {item.notes&&<div style={{fontSize:9,color:"var(--ink3)",fontStyle:"italic"}}>{item.notes}</div>}
+              </div>
+              <button className="food-delete" onClick={()=>removeItem(item.id)}>×</button>
+            </div>
           ))}
         </div>
       ))}
@@ -1471,12 +1585,20 @@ function ProfileTab({profile,setProfile}){
       <div className="profile-section">
         <div className="profile-section-title">Conditions</div>
         {profile.conditions.map((c,i)=><div className="condition-tag" key={i}>{c}<button className="remove-tag" onClick={()=>removeC(i)}>×</button></div>)}
-        <div className="input-row" style={{marginTop:6}}><input className="text-input" style={{flex:1}} placeholder="Add condition…" value={newC} onChange={e=>setNewC(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addC()}/><button className="btn btn-outline" onClick={addC}>Add</button></div>
+        <div className="input-row" style={{marginTop:6}}>
+          <input className="text-input" style={{flex:1}} placeholder="Add condition…" value={newC} onChange={e=>setNewC(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addC()}/>
+          <MicBtn onResult={t=>setNewC(p=>p?p+" "+t:t)}/>
+          <button className="btn btn-outline" onClick={addC}>Add</button>
+        </div>
       </div>
       <div className="profile-section">
         <div className="profile-section-title">Dietary restrictions</div>
         {profile.restrictions.map((r,i)=><div className="restriction-tag" key={i}>{r}<button className="remove-tag" onClick={()=>removeR(i)}>×</button></div>)}
-        <div className="input-row" style={{marginTop:6}}><input className="text-input" style={{flex:1}} placeholder="Add restriction…" value={newR} onChange={e=>setNewR(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addR()}/><button className="btn btn-outline" onClick={addR}>Add</button></div>
+        <div className="input-row" style={{marginTop:6}}>
+          <input className="text-input" style={{flex:1}} placeholder="Add restriction…" value={newR} onChange={e=>setNewR(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addR()}/>
+          <MicBtn onResult={t=>setNewR(p=>p?p+" "+t:t)}/>
+          <button className="btn btn-outline" onClick={addR}>Add</button>
+        </div>
       </div>
       <div className="profile-section">
         <div className="profile-section-title">Notes for coach</div>
@@ -1522,16 +1644,18 @@ function App(){
       if(pan&&pan.length>0){setPantry(pan);}
       else{
         const defaultPantry=[
-          {id:"silk-soy",name:"Silk Original Soy Milk (green carton)",qty:"300mg Ca/cup · 115mg Na/cup · 7g protein",cat:"Dairy & Alternatives"},
-          {id:"tj-kefir",name:"TJ's Plain Low-Fat Kefir",qty:"440mg Ca/cup · 125mg Na · 11g protein",cat:"Dairy & Alternatives"},
-          {id:"tj-swiss",name:"Swiss Cheese",qty:"224mg Ca/oz · 54mg Na · 8g protein",cat:"Dairy & Alternatives"},
-          {id:"tj-multigrain",name:"TJ's Multigrain Bread",qty:"150mg Na/slice · 110 cal",cat:"Grains & Legumes"},
-          {id:"ortiz-tuna",name:"Ortiz Bonito del Norte Tuna",qty:"280mg Na/half can · 22g protein",cat:"Fish & Seafood"},
-          {id:"tj-mussels",name:"TJ's Lightly Smoked Mussels",qty:"HIGH Na 480mg/tin · 18g protein",cat:"Fish & Seafood"},
-          {id:"tj-tofu",name:"TJ's High Protein Super Firm Tofu",qty:"55mg Na/3oz · 11g protein",cat:"Protein"},
-          {id:"sardines",name:"Sardines with bones",qty:"High Ca · great omega-3",cat:"Fish & Seafood"},
-          {id:"eggs",name:"Eggs",qty:"6g protein each · low oxalate",cat:"Protein"},
-          {id:"avocado",name:"Avocado",qty:"Low oxalate · healthy fat",cat:"Produce"},
+          {id:"silk-soy",name:"Silk Original Soy Milk",notes:"Per 1 cup (240ml)",nutrients:{calcium:300,sodium:115,protein:7,calories:110},cat:"dairy"},
+          {id:"tj-kefir",name:"TJ's Plain Low-Fat Kefir",notes:"Per 1 cup (240ml)",nutrients:{calcium:440,sodium:125,protein:11,calories:110},cat:"dairy"},
+          {id:"tj-swiss",name:"Swiss Cheese",notes:"Per 1 oz (28g)",nutrients:{calcium:224,sodium:54,protein:8,calories:108},cat:"dairy"},
+          {id:"tj-multigrain",name:"TJ's Multigrain Bread",notes:"Per 1 slice",nutrients:{calcium:20,sodium:150,protein:4,calories:110},cat:"grains"},
+          {id:"ortiz-tuna",name:"Ortiz Bonito del Norte Tuna",notes:"Per half can (55g)",nutrients:{calcium:15,sodium:280,protein:22,calories:130},cat:"fish"},
+          {id:"tj-mussels",name:"TJ's Lightly Smoked Mussels",notes:"Per tin (85g) — HIGH Na",nutrients:{calcium:60,sodium:480,protein:18,calories:150},cat:"fish"},
+          {id:"tj-tofu",name:"TJ's High Protein Super Firm Tofu",notes:"Per 3oz (85g)",nutrients:{calcium:200,sodium:55,protein:11,calories:90},cat:"protein"},
+          {id:"sardines",name:"Sardines with bones",notes:"Per can — great Ca source",nutrients:{calcium:351,sodium:282,protein:22,calories:190},cat:"fish"},
+          {id:"eggs",name:"Eggs",notes:"Per egg",nutrients:{calcium:28,sodium:63,protein:6,calories:78},cat:"protein"},
+          {id:"avocado",name:"Avocado",notes:"Per half — low oxalate",nutrients:{calcium:12,sodium:5,protein:1.5,calories:120},cat:"produce"},
+          {id:"gouda",name:"Gouda Cheese",notes:"Per oz — higher Na than Swiss",nutrients:{calcium:198,sodium:232,protein:7,calories:101},cat:"dairy"},
+          {id:"greek-yogurt",name:"Greek Yogurt (plain)",notes:"Per cup",nutrients:{calcium:200,sodium:55,protein:17,calories:100},cat:"dairy"},
         ];
         setPantry(defaultPantry);
         store.set("pantry",defaultPantry);
@@ -1577,11 +1701,32 @@ function App(){
           <div className="header-date">{today}</div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile} onSaveToPantry={(r)=>{const item={id:Date.now(),name:r.product_name||"Scanned product",qty:Object.entries(r.key_nutrients||{}).map(([k,v])=>k+": "+v).join(" · "),cat:"Other"};const u=[...pantry,item];setPantry(u);store.set("pantry",u);}}/>}
+        {tab==="scan"&&<ScanTab profile={profile} onSave={(r,dest)=>{
+  const nutrients={};
+  Object.entries(r.key_nutrients||{}).forEach(([k,v])=>{
+    const n=parseFloat(v);
+    if(!isNaN(n)){
+      if(k.toLowerCase().indexOf("sodium")!==-1||k.toLowerCase()==="na")nutrients.sodium=n;
+      if(k.toLowerCase().indexOf("calcium")!==-1||k.toLowerCase()==="ca")nutrients.calcium=n;
+      if(k.toLowerCase().indexOf("protein")!==-1)nutrients.protein=n;
+      if(k.toLowerCase().indexOf("calorie")!==-1)nutrients.calories=n;
+    }
+  });
+  if(dest==="pantry"){
+    const item={id:Date.now(),name:r.product_name||"Scanned product",notes:r.serving_advice||"",nutrients,cat:"other"};
+    const u=[...pantry,item];setPantry(u);store.set("pantry",u);
+  } else if(dest==="skin"){
+    alert("Saved to Skincare notes! (full Skincare save coming soon)");
+  } else if(dest==="medical"){
+    alert("Saved to Medical notes! (full Medical save coming soon)");
+  } else if(dest==="meds"){
+    alert("Saved to Meds! (full Meds save coming soon)");
+  }
+}}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
