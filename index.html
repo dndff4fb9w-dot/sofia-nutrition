@@ -304,10 +304,41 @@ const KNOWN = [
   {k:["greek yogurt","plain yogurt","yogurt"],cup:{na:55,ca:200,cal:100,pro:17,pot:240,mg:20},ox:"low"},
 ];
 
-function getNum(str, pattern) {
+function parseOz(str) {
   if (!str) return null;
-  var m = str.match(pattern);
-  return m ? parseFloat(m[1]) : null;
+  var i = str.indexOf("oz");
+  if (i === -1) return null;
+  var j = i - 1;
+  while (j >= 0 && (str[j] === " " || str[j] === ".")) j--;
+  var k = j;
+  while (k >= 0 && str[k] >= "0" && str[k] <= "9") k--;
+  var num = parseFloat(str.slice(k+1, j+1));
+  return isNaN(num) ? null : num;
+}
+function parseCups(str) {
+  if (!str) return null;
+  var i = str.indexOf("cup");
+  if (i === -1) return null;
+  var j = i - 1;
+  while (j >= 0 && str[j] === " ") j--;
+  var k = j;
+  while (k >= 0 && (str[k] >= "0" && str[k] <= "9" || str[k] === ".")) k--;
+  var num = parseFloat(str.slice(k+1, j+1));
+  return isNaN(num) ? null : num;
+}
+function parseEggs(str) {
+  var words = ["2 egg","3 egg","4 egg","one egg","two egg","three egg"];
+  for (var w = 0; w < words.length; w++) {
+    if (str.indexOf(words[w]) !== -1) return w < 3 ? w+2 : 1;
+  }
+  return str.indexOf("egg") !== -1 ? 1 : null;
+}
+function parseSlices(str) {
+  var i = str.indexOf("slice");
+  if (i === -1) return null;
+  if (str.indexOf("2 slice") !== -1) return 2;
+  if (str.indexOf("3 slice") !== -1) return 3;
+  return 1;
 }
 
 function lookupKnown(desc) {
@@ -319,77 +350,37 @@ function lookupKnown(desc) {
       if (d.indexOf(prod.k[j]) !== -1) { found = true; break; }
     }
     if (!found) continue;
-
     var mult = 1;
     var note = "";
-
     if (prod.cup) {
-      var oz = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*oz/);
-      var cups = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*cup/);
+      var oz = parseOz(d);
+      var cups = parseCups(d);
       if (oz) { mult = oz / 8; note = oz + "oz"; }
       else if (cups) { mult = cups; note = cups + " cup"; }
-      else { mult = 1; note = "1 cup est."; }
+      else { mult = 1; note = "1 cup"; }
       var v = prod.cup;
-      return {name: desc, sodium: Math.round(v.na*mult), calcium: Math.round(v.ca*mult), calories: Math.round(v.cal*mult), protein: Math.round(v.pro*mult*10)/10, potassium: Math.round(v.pot*mult), magnesium: Math.round(v.mg*mult), oxalate: prod.ox, notes: "Label values — " + note};
+      return {name:desc,sodium:Math.round(v.na*mult),calcium:Math.round(v.ca*mult),calories:Math.round(v.cal*mult),protein:Math.round(v.pro*mult*10)/10,potassium:Math.round(v.pot*mult),magnesium:Math.round(v.mg*mult),oxalate:prod.ox,notes:"Label values ("+note+")"};
     }
     if (prod.oz) {
-      var oz2 = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*oz/);
-      mult = oz2 || 1;
+      var oz2 = parseOz(d) || 1;
       var v2 = prod.oz;
-      return {name: desc, sodium: Math.round(v2.na*mult), calcium: Math.round(v2.ca*mult), calories: Math.round(v2.cal*mult), protein: Math.round(v2.pro*mult*10)/10, potassium: Math.round(v2.pot*mult), magnesium: Math.round(v2.mg*mult), oxalate: prod.ox, notes: "Label values — " + mult + "oz"};
+      return {name:desc,sodium:Math.round(v2.na*oz2),calcium:Math.round(v2.ca*oz2),calories:Math.round(v2.cal*oz2),protein:Math.round(v2.pro*oz2*10)/10,potassium:Math.round(v2.pot*oz2),magnesium:Math.round(v2.mg*oz2),oxalate:prod.ox,notes:"Label values ("+oz2+"oz)"};
     }
     if (prod.slice) {
-      var sl = getNum(d, /([0-9]+)\s*slice/) || 1;
+      var sl = parseSlices(d) || 1;
       var v3 = prod.slice;
-      return {name: desc, sodium: Math.round(v3.na*sl), calcium: Math.round(v3.ca*sl), calories: Math.round(v3.cal*sl), protein: Math.round(v3.pro*sl*10)/10, potassium: Math.round(v3.pot*sl), magnesium: Math.round(v3.mg*sl), oxalate: prod.ox, notes: "Label values — " + sl + " slice"};
+      return {name:desc,sodium:Math.round(v3.na*sl),calcium:Math.round(v3.ca*sl),calories:Math.round(v3.cal*sl),protein:Math.round(v3.pro*sl*10)/10,potassium:Math.round(v3.pot*sl),magnesium:Math.round(v3.mg*sl),oxalate:prod.ox,notes:"Label values ("+sl+" slice)"};
     }
     if (prod.per_egg) {
-      var eggs = getNum(d, /([0-9]+)\s*egg/) || 1;
+      var eggs = parseEggs(d) || 1;
       var v4 = prod.per_egg;
-      return {name: desc, sodium: Math.round(v4.na*eggs), calcium: Math.round(v4.ca*eggs), calories: Math.round(v4.cal*eggs), protein: Math.round(v4.pro*eggs*10)/10, potassium: Math.round(v4.pot*eggs), magnesium: Math.round(v4.mg*eggs), oxalate: prod.ox, notes: "Label values — " + eggs + " egg(s)"};
+      return {name:desc,sodium:Math.round(v4.na*eggs),calcium:Math.round(v4.ca*eggs),calories:Math.round(v4.cal*eggs),protein:Math.round(v4.pro*eggs*10)/10,potassium:Math.round(v4.pot*eggs),magnesium:Math.round(v4.mg*eggs),oxalate:prod.ox,notes:"Label values ("+eggs+" egg)"};
     }
-    if (prod.per_can) {
-      var v5 = prod.per_can;
-      return {name: desc, sodium: v5.na, calcium: v5.ca, calories: v5.cal, protein: v5.pro, potassium: v5.pot, magnesium: v5.mg, oxalate: prod.ox, notes: "Label values — 1 can"};
-    }
-    if (prod.half_can) {
-      var v6 = prod.half_can;
-      return {name: desc, sodium: v6.na, calcium: v6.ca, calories: v6.cal, protein: v6.pro, potassium: v6.pot, magnesium: v6.mg, oxalate: prod.ox, notes: "Label values — half can"};
-    }
-    if (prod.tin) {
-      var v7 = prod.tin;
-      return {name: desc, sodium: v7.na, calcium: v7.ca, calories: v7.cal, protein: v7.pro, potassium: v7.pot, magnesium: v7.mg, oxalate: prod.ox, notes: "Label values — 1 tin"};
-    }
-    if (prod.per3oz) {
-      var v8 = prod.per3oz;
-      return {name: desc, sodium: v8.na, calcium: v8.ca, calories: v8.cal, protein: v8.pro, potassium: v8.pot, magnesium: v8.mg, oxalate: prod.ox, notes: "Label values — 3oz"};
-    }
-    if (prod.per_half) {
-      var halves = getNum(d, /([0-9]+(?:\.[0-9]+)?)\s*avocado/) || 1;
-      var v9 = prod.per_half;
-      return {name: desc, sodium: Math.round(v9.na*halves), calcium: Math.round(v9.ca*halves), calories: Math.round(v9.cal*halves), protein: Math.round(v9.pro*halves*10)/10, potassium: Math.round(v9.pot*halves), magnesium: Math.round(v9.mg*halves), oxalate: prod.ox, notes: "Label values"};
-    }
-  }
-  return null;
-}
-
-function lookupPantry(desc, pantry) {
-  if (!pantry || !pantry.length) return null;
-  var d = desc.toLowerCase();
-  for (var i = 0; i < pantry.length; i++) {
-    var item = pantry[i];
-    if (!item.name) continue;
-    // Match if any significant word from item name appears in description
-    var itemName = item.name.toLowerCase();
-    var words = itemName.split(" ").filter(function(w){return w.length>3;});
-    var matchCount = 0;
-    for (var w = 0; w < words.length; w++) {
-      if (d.indexOf(words[w]) !== -1) matchCount++;
-    }
-    if (matchCount >= Math.min(2, words.length) && item.nutrients) {
-      var n = item.nutrients;
-      return {name: item.name, sodium: n.sodium||0, calcium: n.calcium||0, calories: n.calories||0, protein: n.protein||0, potassium: n.potassium||0, magnesium: n.magnesium||0, oxalate: n.oxalate||"low", notes: "From your pantry — "+item.notes};
-    }
+    if (prod.per_can) { var v5=prod.per_can; return {name:desc,sodium:v5.na,calcium:v5.ca,calories:v5.cal,protein:v5.pro,potassium:v5.pot,magnesium:v5.mg,oxalate:prod.ox,notes:"Label values (1 can)"}; }
+    if (prod.half_can) { var v6=prod.half_can; return {name:desc,sodium:v6.na,calcium:v6.ca,calories:v6.cal,protein:v6.pro,potassium:v6.pot,magnesium:v6.mg,oxalate:prod.ox,notes:"Label values (half can)"}; }
+    if (prod.tin) { var v7=prod.tin; return {name:desc,sodium:v7.na,calcium:v7.ca,calories:v7.cal,protein:v7.pro,potassium:v7.pot,magnesium:v7.mg,oxalate:prod.ox,notes:"Label values (1 tin)"}; }
+    if (prod.per3oz) { var v8=prod.per3oz; return {name:desc,sodium:v8.na,calcium:v8.ca,calories:v8.cal,protein:v8.pro,potassium:v8.pot,magnesium:v8.mg,oxalate:prod.ox,notes:"Label values (3oz)"}; }
+    if (prod.per_half) { var v9=prod.per_half; return {name:desc,sodium:v9.na,calcium:v9.ca,calories:v9.cal,protein:v9.pro,potassium:v9.pot,magnesium:v9.mg,oxalate:prod.ox,notes:"Label values"}; }
   }
   return null;
 }
