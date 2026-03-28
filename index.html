@@ -281,82 +281,42 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
   }
 }
 
-// Known products with exact label values
-var KNOWN_PRODUCTS = [
-  {names:["silk soy milk","silk original","silk soy","soy milk silk"],cup:{na:115,ca:300,cal:110,pro:7,pot:440,mg:25},ox:"low"},
-  {names:["kefir","tj kefir","plain kefir"],cup:{na:125,ca:440,cal:110,pro:11,pot:400,mg:30},ox:"low"},
-  {names:["swiss cheese","tj swiss"],peroz:{na:54,ca:224,cal:108,pro:8,pot:22,mg:10},ox:"low"},
-  {names:["multigrain bread","multigrain toast","tj multigrain"],perslice:{na:150,ca:20,cal:110,pro:4,pot:80,mg:20},ox:"low"},
-  {names:["ortiz tuna","bonito del norte"],halfcan:{na:280,ca:15,cal:130,pro:22,pot:200,mg:30},ox:"low"},
-  {names:["tj mussels","smoked mussels"],tin:{na:480,ca:60,cal:150,pro:18,pot:300,mg:40},ox:"low"},
-  {names:["super firm tofu","tj tofu","high protein tofu"],p3oz:{na:55,ca:200,cal:90,pro:11,pot:150,mg:30},ox:"low"},
-  {names:["sardines","sardine"],can:{na:282,ca:351,cal:190,pro:22,pot:397,mg:36},ox:"low"},
-  {names:["greek yogurt","plain yogurt"],cup:{na:55,ca:200,cal:100,pro:17,pot:240,mg:20},ox:"low"},
+var KP=[
+  {n:["silk soy milk","silk original","silk soy","soy milk silk"],c:{na:115,ca:300,cal:110,pr:7}},
+  {n:["kefir","tj kefir","plain kefir"],c:{na:125,ca:440,cal:110,pr:11}},
+  {n:["multigrain bread","multigrain toast","tj multigrain"],s:{na:150,ca:20,cal:110,pr:4}},
+  {n:["sardines","sardine"],cn:{na:282,ca:351,cal:190,pr:22}},
+  {n:["greek yogurt","plain yogurt"],c:{na:55,ca:200,cal:100,pr:17}},
 ];
-
-function checkProducts(desc) {
-  var d = desc.toLowerCase();
-  for (var i=0; i<KNOWN_PRODUCTS.length; i++) {
-    var p = KNOWN_PRODUCTS[i];
-    var hit = false;
-    for (var j=0; j<p.names.length; j++) { if(d.indexOf(p.names[j])!==-1){hit=true;break;} }
-    if (!hit) continue;
-    // Get quantity
-    var mult = 1;
-    var note = "";
-    var ozNum = null;
-    var cupNum = null;
-    var sliceNum = null;
-    // Simple number extraction
-    if (d.indexOf("oz")!==-1) {
-      var parts = d.split("oz")[0].trim().split(" ");
-      var last = parseFloat(parts[parts.length-1]);
-      if (!isNaN(last)) ozNum = last;
+function chkKP(d){
+  var dl=d.toLowerCase();
+  for(var i=0;i<KP.length;i++){
+    var p=KP[i];
+    for(var j=0;j<p.n.length;j++){
+      if(dl.indexOf(p.n[j])!==-1){
+        var oz=null,oz2=dl.indexOf("oz");
+        if(oz2!==-1){var pt=dl.slice(0,oz2).trim().split(" ");var ln=parseFloat(pt[pt.length-1]);if(!isNaN(ln))oz=ln;}
+        var m=oz?oz/8:1;
+        var v=p.c||p.s||p.cn||{};
+        return{name:d,sodium:Math.round((v.na||0)*m),calcium:Math.round((v.ca||0)*m),calories:Math.round((v.cal||0)*m),protein:Math.round((v.pr||0)*m*10)/10,potassium:0,magnesium:0,oxalate:"low",notes:"Label values"+(oz?" ("+oz+"oz)":"")};
+      }
     }
-    if (d.indexOf("cup")!==-1) {
-      var parts2 = d.split("cup")[0].trim().split(" ");
-      var last2 = parseFloat(parts2[parts2.length-1]);
-      if (!isNaN(last2)) cupNum = last2;
-    }
-    if (d.indexOf("slice")!==-1) {
-      sliceNum = 1;
-      if (d.indexOf("2 slice")!==-1) sliceNum=2;
-      if (d.indexOf("3 slice")!==-1) sliceNum=3;
-    }
-    if (p.cup) {
-      if (ozNum) { mult=ozNum/8; note=ozNum+"oz"; }
-      else if (cupNum) { mult=cupNum; note=cupNum+" cup"; }
-      else { mult=1; note="1 cup"; }
-      var v=p.cup;
-      return {name:desc,sodium:Math.round(v.na*mult),calcium:Math.round(v.ca*mult),calories:Math.round(v.cal*mult),protein:Math.round(v.pro*mult*10)/10,potassium:Math.round(v.pot*mult),magnesium:Math.round(v.mg*mult),oxalate:p.ox,notes:"Label values ("+note+")"};
-    }
-    if (p.peroz) { var oz3=ozNum||1; var v2=p.peroz; return {name:desc,sodium:Math.round(v2.na*oz3),calcium:Math.round(v2.ca*oz3),calories:Math.round(v2.cal*oz3),protein:Math.round(v2.pro*oz3*10)/10,potassium:Math.round(v2.pot*oz3),magnesium:Math.round(v2.mg*oz3),oxalate:p.ox,notes:"Label values"}; }
-    if (p.perslice) { var sl=sliceNum||1; var v3=p.perslice; return {name:desc,sodium:Math.round(v3.na*sl),calcium:Math.round(v3.ca*sl),calories:Math.round(v3.cal*sl),protein:Math.round(v3.pro*sl*10)/10,potassium:Math.round(v3.pot*sl),magnesium:Math.round(v3.mg*sl),oxalate:p.ox,notes:"Label values"}; }
-    if (p.halfcan) { var v4=p.halfcan; return {name:desc,sodium:v4.na,calcium:v4.ca,calories:v4.cal,protein:v4.pro,potassium:v4.pot,magnesium:v4.mg,oxalate:p.ox,notes:"Label values"}; }
-    if (p.tin) { var v5=p.tin; return {name:desc,sodium:v5.na,calcium:v5.ca,calories:v5.cal,protein:v5.pro,potassium:v5.pot,magnesium:v5.mg,oxalate:p.ox,notes:"Label values"}; }
-    if (p.p3oz) { var v6=p.p3oz; return {name:desc,sodium:v6.na,calcium:v6.ca,calories:v6.cal,protein:v6.pro,potassium:v6.pot,magnesium:v6.mg,oxalate:p.ox,notes:"Label values"}; }
-    if (p.can) { var v7=p.can; return {name:desc,sodium:v7.na,calcium:v7.ca,calories:v7.cal,protein:v7.pro,potassium:v7.pot,magnesium:v7.mg,oxalate:p.ox,notes:"Label values"}; }
   }
   return null;
 }
 
-
 async function parseFood(desc) {
-  // Check known products first
-  var known = checkProducts(desc);
-  if (known) return known;
-  // Fall back to AI
-  const sys = `Nutrition database. Pescatarian only (no meat). Return ONLY valid JSON:
-{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence kidney stone note"}
+  var kp=chkKP(desc);if(kp)return kp;
+  const sys = `Nutrition database. Pescatarian only. Return ONLY valid JSON:
+{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"brief note"}
 All mg except calories(kcal) and protein(g).`;
   try {
     const raw = await callClaude([{ role: "user", content: desc }], sys);
     if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
     const cleaned = raw.replace(/```json|```/g, "").trim();
-    const startJ = cleaned.indexOf("{");
-    const endJ = cleaned.lastIndexOf("}");
-    if (startJ===-1||endJ===-1) return {error: "Try again"};
-    return JSON.parse(cleaned.slice(startJ, endJ+1));
+    const s=cleaned.indexOf("{");const e=cleaned.lastIndexOf("}");
+    if(s===-1||e===-1)return{error:"Try again"};
+    return JSON.parse(cleaned.slice(s,e+1));
   } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
@@ -973,7 +933,7 @@ function InjectionsTab({injections,setInjections}){
   const[date,setDate]=useState(todayKey());
   const[notes,setNotes]=useState("");
 
-  const COMMON=["Botox","Hyaluronic acid filler","PRP","Mesotherapy","Lip filler","Jaw filler","Cheek filler","Chin filler","Undereye filler","Skinbooster"];
+  const COMMON=["Botox","Hyaluronic acid filler","PRP","Lip filler","Cheek filler","Skinbooster","Dentist cleaning","Colonoscopy","Blood test","Eye exam","Mammogram","Facial","Massage","Physiotherapy","Surgery","Vaccination","Other"];
 
   function addInjection(){
     if(!name.trim())return;
@@ -990,7 +950,7 @@ function InjectionsTab({injections,setInjections}){
 
   return(
     <div className="section">
-      <p className="section-title">Aesthetic Procedures</p>
+      <p className="section-title">Procedures & Appointments</p>
 
       <div className="add-food-area" style={{marginBottom:16}}>
         <div className="add-food-title">Log a procedure</div>
@@ -1183,7 +1143,7 @@ Return ONLY valid JSON:
           <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
             value={question} onChange={e=>setQuestion(e.target.value)}/>
           <div className="photo-zone">
-            <input type="file" accept="image/*" onChange={e=>scanProduct(e.target.files[0])}/>
+            <input type="file" accept="image/*" multiple onChange={function(e){if(e.target.files[0])scanProduct(e.target.files[0]);}}/>
             <div style={{fontSize:26,marginBottom:5}}>📷</div>
             <div style={{fontSize:11,color:"var(--ink3)",lineHeight:1.5}}><strong style={{color:"var(--green)",display:"block",marginBottom:3}}>Photograph any label</strong>Food, skincare, or supplement — Claude checks against your health profile.</div>
           </div>
@@ -1215,14 +1175,13 @@ Return ONLY valid JSON:
               <div style={{marginTop:11}}>
                 <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".08em",textTransform:"uppercase"}}>Save to:</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:9}}>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"pantry")}>🥫 Pantry</button>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"skin")}>🧴 Skincare</button>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"medical")}>🩺 Medical</button>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"meds")}>💊 Meds</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"pantry");}}>Pantry</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"medical");}}>Medical</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"meds");}}>Meds</button>
                 </div>
                 <div style={{display:"flex",gap:7}}>
                   <button className="btn btn-primary" onClick={reset}>Scan another</button>
-                  <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+                  <button className="btn btn-outline" onClick={function(){setResult(null);}}>Re-analyze</button>
                 </div>
               </div>
             </div>
@@ -1278,68 +1237,56 @@ function MedicalTab({medical,setMedical}){
 
 // ─── PANTRY TAB ──────────────────────────────────────────────────────────────
 function PantryTab({pantry,setPantry}){
-  const[name,setName]=useState("");
-  const[qty,setQty]=useState("");
-  const[cat,setCat]=useState("dairy");
+  const[name,setName]=useState("");const[qty,setQty]=useState("");const[cat,setCat]=useState("dairy");
   const CATS=["dairy","fish","protein","grain","produce","condiment","other"];
-  const{listening:micListening,startListening:micStart,stopListening:micStop}=useVoice(t=>setName(p=>p?p+" "+t:t));
-  function addItem(){
-    if(!name.trim())return;
-    const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];
-    setPantry(u);store.set("pantry",u);setName("");setQty("");
+  const[micOn,setMicOn]=useState(false);const recRef2=React.useRef(null);
+  function startMic(){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Use Safari on iPhone.");return;}
+    var r=new SR();r.lang="en-US";r.continuous=false;r.interimResults=false;
+    r.onstart=function(){setMicOn(true);};
+    r.onresult=function(e){if(e.results[0][0].transcript)setName(function(p){return p?p+" "+e.results[0][0].transcript:e.results[0][0].transcript;});setMicOn(false);};
+    r.onerror=function(){setMicOn(false);};r.onend=function(){setMicOn(false);};
+    try{r.start();recRef2.current=r;}catch(e){setMicOn(false);}
   }
-  function removeItem(id){const u=pantry.filter(p=>p.id!==id);setPantry(u);store.set("pantry",u);}
-  const grouped=CATS.reduce((a,c)=>{a[c]=pantry.filter(p=>p.cat===c);return a;},{});
+  function stopMic(){if(recRef2.current)recRef2.current.stop();setMicOn(false);}
+  function addItem(){if(!name.trim())return;const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];setPantry(u);store.set("pantry",u);setName("");setQty("");}
+  function removeItem(id){const u=pantry.filter(function(p){return p.id!==id;});setPantry(u);store.set("pantry",u);}
+  const grouped=CATS.reduce(function(a,c){a[c]=pantry.filter(function(p){return p.cat===c;});return a;},{});
   return(
     <div className="section">
       <p className="section-title">Pantry</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>Your products. Scan a label in the 📷 Scan tab to save here automatically.</p>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>Your products. Scan a label in the Scan tab to add automatically.</p>
       <div className="add-food-area" style={{marginBottom:14}}>
-        <div className="add-food-title">Add item manually</div>
+        <div className="add-food-title">Add item</div>
         <div className="input-row" style={{marginBottom:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
-          <button className={`mic-btn ${micListening?"listening":"idle"}`} onClick={micListening?micStop:micStart}>{micListening?"🔴":"🎤"}</button>
+          <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={function(e){setName(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")addItem();}}/>
+          <button className={"mic-btn "+(micOn?"listening":"idle")} onClick={micOn?stopMic:startMic}>{micOn?"🔴":"🎤"}</button>
           <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16}}>
-            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
-              const file=e.target.files[0];if(!file)return;
-              const reader=new FileReader();
-              reader.onload=async ev=>{
-                const b64=ev.target.result.split(",")[1];
-                const sys=`Read this product label. Return ONLY JSON: {"name":"product name","notes":"serving size and key nutrition per serving"}`;
-                const raw=await callClaudeWithImage(b64,file.type||"image/jpeg","Read this label.",sys);
-                try{const r=JSON.parse(raw.replace(/```json|```/g,"").trim());setName(r.name||"");setQty(r.notes||"");}
-                catch{setName("Scanned product");}
-              };
-              reader.readAsDataURL(file);
-              e.target.value="";
-            }}/>
+            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={function(e){var file=e.target.files[0];if(!file)return;var r2=new FileReader();r2.onload=async function(ev){var b64=ev.target.result.split(",")[1];var raw=await callClaudeWithImage(b64,file.type||"image/jpeg","Read this product label name only.","Return just the product name, nothing else.");setName(raw.slice(0,80)||"Scanned");};r2.readAsDataURL(file);e.target.value="";}}/>
           </label>
         </div>
         <div className="input-row">
-          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup, 115mg Na)" value={qty} onChange={e=>setQty(e.target.value)}/>
-          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:90}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup)" value={qty} onChange={function(e){setQty(e.target.value);}}/>
+          <select className="text-input" value={cat} onChange={function(e){setCat(e.target.value);}} style={{maxWidth:90}}>{CATS.map(function(c){return <option key={c} value={c}>{c}</option>;})}</select>
           <button className="btn btn-primary" onClick={addItem}>Add</button>
         </div>
       </div>
       {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add your regular products here</div></div>)
-      :CATS.map(c=>grouped[c].length>0&&(
+      :CATS.map(function(c){return grouped[c]&&grouped[c].length>0&&(
         <div key={c} style={{marginBottom:14}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{c}</div>
-          {grouped[c].map(item=>(
+          {grouped[c].map(function(item){return(
             <div className="pantry-item" key={item.id}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>
-                {item.qty&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{item.qty}</div>}
-              </div>
-              <button className="food-delete" onClick={()=>removeItem(item.id)}>×</button>
+              <div style={{flex:1}}><div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>{item.qty&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{item.qty}</div>}</div>
+              <button className="food-delete" onClick={function(){removeItem(item.id);}}>×</button>
             </div>
-          ))}
+          );})}
         </div>
-      ))}
+      );})}
     </div>
   );
 }
-
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical}){
@@ -1460,18 +1407,18 @@ function App(){
   useEffect(()=>{
     async function load(){
       try{
-        const p=await store.get("profile");if(p)setProfile(p);
-        const pan=await store.get("pantry");if(pan&&pan.length>0){setPantry(pan);}
-        const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
-        const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
-        const m=await store.get("master");if(m)setMaster(m);
-        const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
-        const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
-        const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
-        const inj=await store.get("injections");if(inj)setInjections(inj);
-        const med=await store.get("medical");if(med)setMedical(med);
-      }catch(e){console.warn("Load error:",e);}
+      const p=await store.get("profile");if(p)setProfile(p);
+      const pan=await store.get("pantry");if(pan)setPantry(pan);
+      const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
+      const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
+      const m=await store.get("master");if(m)setMaster(m);
+      const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
+      const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
+      const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
+      const inj=await store.get("injections");if(inj)setInjections(inj);
+      const med=await store.get("medical");if(med)setMedical(med);
       setLoaded(true);
+      }catch(e){console.warn(e);}
       document.getElementById("splash").style.display="none";
       document.getElementById("root").style.display="block";
     }
@@ -1479,7 +1426,12 @@ function App(){
     if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
   },[]);
 
-  if(!loaded)return null;
+  function handleScanSave(r,dest){
+    if(dest==="pantry"){var item={id:Date.now(),name:r.product_name||"Scanned",qty:r.serving_advice||"",cat:"other"};var u=[...pantry,item];setPantry(u);store.set("pantry",u);}
+    else if(dest==="medical"){var note=" ["+new Date().toLocaleDateString()+"] "+(r.product_name||"")+": "+(r.reasoning||"");var nm={...medical,other:(medical.other||"")+note};setMedical(nm);store.set("medical",nm);}
+    else if(dest==="meds"){var ni={id:Date.now(),name:r.product_name||"Scanned",dose:r.serving_advice||"",category:"supplement",time:"morning",notes:r.reasoning||"",paused:false,synergies:[]};var u2=[...master,ni];setMaster(u2);store.set("master",u2);}
+  }
+    if(!loaded)return null;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const TABS=[
@@ -1508,15 +1460,7 @@ function App(){
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile} onSave={(r,dest)=>{
-  if(dest==="pantry"){
-    const item={id:Date.now(),name:r.product_name||"Scanned product",qty:r.serving_advice||"",cat:"other"};
-    const u=[...pantry,item];setPantry(u);store.set("pantry",u);
-    alert("Saved to Pantry: "+item.name);
-  } else {
-    alert("Saved to "+dest+"! (full integration coming soon)");
-  }
-}}/>}}
+        {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
