@@ -1299,6 +1299,21 @@ function PantryTab({pantry,setPantry}){
         <div className="input-row" style={{marginBottom:6}}>
           <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
           <button className={`mic-btn ${micListening?"listening":"idle"}`} onClick={micListening?micStop:micStart}>{micListening?"🔴":"🎤"}</button>
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16}}>
+            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+              const file=e.target.files[0];if(!file)return;
+              const reader=new FileReader();
+              reader.onload=async ev=>{
+                const b64=ev.target.result.split(",")[1];
+                const sys=`Read this product label. Return ONLY JSON: {"name":"product name","notes":"serving size and key nutrition per serving"}`;
+                const raw=await callClaudeWithImage(b64,file.type||"image/jpeg","Read this label.",sys);
+                try{const r=JSON.parse(raw.replace(/```json|```/g,"").trim());setName(r.name||"");setQty(r.notes||"");}
+                catch{setName("Scanned product");}
+              };
+              reader.readAsDataURL(file);
+              e.target.value="";
+            }}/>
+          </label>
         </div>
         <div className="input-row">
           <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup, 115mg Na)" value={qty} onChange={e=>setQty(e.target.value)}/>
