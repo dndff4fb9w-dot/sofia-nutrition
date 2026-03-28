@@ -229,7 +229,7 @@ async function callClaude(messages, system, retries=3) {
       const r = await fetchWithTimeout("/.netlify/functions/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, system, messages }),
+        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1000, system, messages }),
       });
       if (!r.ok) {
         const err = await r.text();
@@ -281,126 +281,82 @@ async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
   }
 }
 
-// ─── Oxalate guesser ──────────────────────────────────────────────────────────
-function guessOxalate(text){
-  var t=text.toLowerCase();
-  if(t.indexOf("spinach")!==-1||t.indexOf("chard")!==-1||t.indexOf("beet")!==-1||t.indexOf("sweet potato")!==-1||t.indexOf("almond")!==-1||t.indexOf("cashew")!==-1||t.indexOf("chocolate")!==-1||t.indexOf("rhubarb")!==-1||t.indexOf("soy flour")!==-1||t.indexOf("kale")!==-1)return"high";
-  if(t.indexOf("tea")!==-1||t.indexOf("berry")!==-1||t.indexOf("berries")!==-1||t.indexOf("strawberry")!==-1||t.indexOf("raspberry")!==-1||t.indexOf("blueberry")!==-1||t.indexOf("blackberry")!==-1||t.indexOf("kiwi")!==-1||t.indexOf("pumpkin seed")!==-1||t.indexOf("sunflower seed")!==-1||t.indexOf("brown rice")!==-1)return"med";
-  return"low";
-}
-
-// ─── Known products database ──────────────────────────────────────────────────
-const KNOWN = [
-  {k:["silk soy milk","silk original","silk soy","soy milk silk","silk"],cup:{na:115,ca:300,cal:110,pro:7,pot:440,mg:25},ox:"low"},
-  {k:["kefir","tj kefir","plain kefir","low-fat kefir","lowfat kefir"],cup:{na:125,ca:440,cal:110,pro:11,pot:400,mg:30},ox:"low"},
-  {k:["swiss cheese","tj swiss","swiss"],oz:{na:54,ca:224,cal:108,pro:8,pot:22,mg:10},ox:"low"},
-  {k:["multigrain bread","multigrain toast","tj multigrain","multigrain"],slice:{na:150,ca:20,cal:110,pro:4,pot:80,mg:20},ox:"low"},
-  {k:["ortiz tuna","bonito del norte","ortiz"],half_can:{na:280,ca:15,cal:130,pro:22,pot:200,mg:30},ox:"low"},
-  {k:["tj mussels","smoked mussels","lightly smoked mussels","mussels"],tin:{na:480,ca:60,cal:150,pro:18,pot:300,mg:40},ox:"low"},
-  {k:["super firm tofu","tj tofu","high protein tofu","tofu"],per3oz:{na:55,ca:200,cal:90,pro:11,pot:150,mg:30},ox:"low"},
-  {k:["sardines","sardine"],per_can:{na:282,ca:351,cal:190,pro:22,pot:397,mg:36},ox:"low"},
-  {k:["egg","boiled egg","fried egg","eggs"],per_egg:{na:63,ca:28,cal:78,pro:6,pot:67,mg:6},ox:"low"},
-  {k:["avocado"],per_half:{na:5,ca:12,cal:120,pro:1.5,pot:487,mg:22},ox:"low"},
-  {k:["greek yogurt","plain yogurt","yogurt"],cup:{na:55,ca:200,cal:100,pro:17,pot:240,mg:20},ox:"low"},
+// Known products with exact label values
+var KNOWN_PRODUCTS = [
+  {names:["silk soy milk","silk original","silk soy","soy milk silk"],cup:{na:115,ca:300,cal:110,pro:7,pot:440,mg:25},ox:"low"},
+  {names:["kefir","tj kefir","plain kefir"],cup:{na:125,ca:440,cal:110,pro:11,pot:400,mg:30},ox:"low"},
+  {names:["swiss cheese","tj swiss"],peroz:{na:54,ca:224,cal:108,pro:8,pot:22,mg:10},ox:"low"},
+  {names:["multigrain bread","multigrain toast","tj multigrain"],perslice:{na:150,ca:20,cal:110,pro:4,pot:80,mg:20},ox:"low"},
+  {names:["ortiz tuna","bonito del norte"],halfcan:{na:280,ca:15,cal:130,pro:22,pot:200,mg:30},ox:"low"},
+  {names:["tj mussels","smoked mussels"],tin:{na:480,ca:60,cal:150,pro:18,pot:300,mg:40},ox:"low"},
+  {names:["super firm tofu","tj tofu","high protein tofu"],p3oz:{na:55,ca:200,cal:90,pro:11,pot:150,mg:30},ox:"low"},
+  {names:["sardines","sardine"],can:{na:282,ca:351,cal:190,pro:22,pot:397,mg:36},ox:"low"},
+  {names:["greek yogurt","plain yogurt"],cup:{na:55,ca:200,cal:100,pro:17,pot:240,mg:20},ox:"low"},
 ];
 
-function parseOz(str) {
-  if (!str) return null;
-  var i = str.indexOf("oz");
-  if (i === -1) return null;
-  var j = i - 1;
-  while (j >= 0 && (str[j] === " " || str[j] === ".")) j--;
-  var k = j;
-  while (k >= 0 && str[k] >= "0" && str[k] <= "9") k--;
-  var num = parseFloat(str.slice(k+1, j+1));
-  return isNaN(num) ? null : num;
-}
-function parseCups(str) {
-  if (!str) return null;
-  var i = str.indexOf("cup");
-  if (i === -1) return null;
-  var j = i - 1;
-  while (j >= 0 && str[j] === " ") j--;
-  var k = j;
-  while (k >= 0 && (str[k] >= "0" && str[k] <= "9" || str[k] === ".")) k--;
-  var num = parseFloat(str.slice(k+1, j+1));
-  return isNaN(num) ? null : num;
-}
-function parseEggs(str) {
-  var words = ["2 egg","3 egg","4 egg","one egg","two egg","three egg"];
-  for (var w = 0; w < words.length; w++) {
-    if (str.indexOf(words[w]) !== -1) return w < 3 ? w+2 : 1;
-  }
-  return str.indexOf("egg") !== -1 ? 1 : null;
-}
-function parseSlices(str) {
-  var i = str.indexOf("slice");
-  if (i === -1) return null;
-  if (str.indexOf("2 slice") !== -1) return 2;
-  if (str.indexOf("3 slice") !== -1) return 3;
-  return 1;
-}
-
-function lookupKnown(desc) {
+function checkProducts(desc) {
   var d = desc.toLowerCase();
-  for (var i = 0; i < KNOWN.length; i++) {
-    var prod = KNOWN[i];
-    var found = false;
-    for (var j = 0; j < prod.k.length; j++) {
-      if (d.indexOf(prod.k[j]) !== -1) { found = true; break; }
-    }
-    if (!found) continue;
+  for (var i=0; i<KNOWN_PRODUCTS.length; i++) {
+    var p = KNOWN_PRODUCTS[i];
+    var hit = false;
+    for (var j=0; j<p.names.length; j++) { if(d.indexOf(p.names[j])!==-1){hit=true;break;} }
+    if (!hit) continue;
+    // Get quantity
     var mult = 1;
     var note = "";
-    if (prod.cup) {
-      var oz = parseOz(d);
-      var cups = parseCups(d);
-      if (oz) { mult = oz / 8; note = oz + "oz"; }
-      else if (cups) { mult = cups; note = cups + " cup"; }
-      else { mult = 1; note = "1 cup"; }
-      var v = prod.cup;
-      return {name:desc,sodium:Math.round(v.na*mult),calcium:Math.round(v.ca*mult),calories:Math.round(v.cal*mult),protein:Math.round(v.pro*mult*10)/10,potassium:Math.round(v.pot*mult),magnesium:Math.round(v.mg*mult),oxalate:prod.ox,notes:"Label values ("+note+")"};
+    var ozNum = null;
+    var cupNum = null;
+    var sliceNum = null;
+    // Simple number extraction
+    if (d.indexOf("oz")!==-1) {
+      var parts = d.split("oz")[0].trim().split(" ");
+      var last = parseFloat(parts[parts.length-1]);
+      if (!isNaN(last)) ozNum = last;
     }
-    if (prod.oz) {
-      var oz2 = parseOz(d) || 1;
-      var v2 = prod.oz;
-      return {name:desc,sodium:Math.round(v2.na*oz2),calcium:Math.round(v2.ca*oz2),calories:Math.round(v2.cal*oz2),protein:Math.round(v2.pro*oz2*10)/10,potassium:Math.round(v2.pot*oz2),magnesium:Math.round(v2.mg*oz2),oxalate:prod.ox,notes:"Label values ("+oz2+"oz)"};
+    if (d.indexOf("cup")!==-1) {
+      var parts2 = d.split("cup")[0].trim().split(" ");
+      var last2 = parseFloat(parts2[parts2.length-1]);
+      if (!isNaN(last2)) cupNum = last2;
     }
-    if (prod.slice) {
-      var sl = parseSlices(d) || 1;
-      var v3 = prod.slice;
-      return {name:desc,sodium:Math.round(v3.na*sl),calcium:Math.round(v3.ca*sl),calories:Math.round(v3.cal*sl),protein:Math.round(v3.pro*sl*10)/10,potassium:Math.round(v3.pot*sl),magnesium:Math.round(v3.mg*sl),oxalate:prod.ox,notes:"Label values ("+sl+" slice)"};
+    if (d.indexOf("slice")!==-1) {
+      sliceNum = 1;
+      if (d.indexOf("2 slice")!==-1) sliceNum=2;
+      if (d.indexOf("3 slice")!==-1) sliceNum=3;
     }
-    if (prod.per_egg) {
-      var eggs = parseEggs(d) || 1;
-      var v4 = prod.per_egg;
-      return {name:desc,sodium:Math.round(v4.na*eggs),calcium:Math.round(v4.ca*eggs),calories:Math.round(v4.cal*eggs),protein:Math.round(v4.pro*eggs*10)/10,potassium:Math.round(v4.pot*eggs),magnesium:Math.round(v4.mg*eggs),oxalate:prod.ox,notes:"Label values ("+eggs+" egg)"};
+    if (p.cup) {
+      if (ozNum) { mult=ozNum/8; note=ozNum+"oz"; }
+      else if (cupNum) { mult=cupNum; note=cupNum+" cup"; }
+      else { mult=1; note="1 cup"; }
+      var v=p.cup;
+      return {name:desc,sodium:Math.round(v.na*mult),calcium:Math.round(v.ca*mult),calories:Math.round(v.cal*mult),protein:Math.round(v.pro*mult*10)/10,potassium:Math.round(v.pot*mult),magnesium:Math.round(v.mg*mult),oxalate:p.ox,notes:"Label values ("+note+")"};
     }
-    if (prod.per_can) { var v5=prod.per_can; return {name:desc,sodium:v5.na,calcium:v5.ca,calories:v5.cal,protein:v5.pro,potassium:v5.pot,magnesium:v5.mg,oxalate:prod.ox,notes:"Label values (1 can)"}; }
-    if (prod.half_can) { var v6=prod.half_can; return {name:desc,sodium:v6.na,calcium:v6.ca,calories:v6.cal,protein:v6.pro,potassium:v6.pot,magnesium:v6.mg,oxalate:prod.ox,notes:"Label values (half can)"}; }
-    if (prod.tin) { var v7=prod.tin; return {name:desc,sodium:v7.na,calcium:v7.ca,calories:v7.cal,protein:v7.pro,potassium:v7.pot,magnesium:v7.mg,oxalate:prod.ox,notes:"Label values (1 tin)"}; }
-    if (prod.per3oz) { var v8=prod.per3oz; return {name:desc,sodium:v8.na,calcium:v8.ca,calories:v8.cal,protein:v8.pro,potassium:v8.pot,magnesium:v8.mg,oxalate:prod.ox,notes:"Label values (3oz)"}; }
-    if (prod.per_half) { var v9=prod.per_half; return {name:desc,sodium:v9.na,calcium:v9.ca,calories:v9.cal,protein:v9.pro,potassium:v9.pot,magnesium:v9.mg,oxalate:prod.ox,notes:"Label values"}; }
+    if (p.peroz) { var oz3=ozNum||1; var v2=p.peroz; return {name:desc,sodium:Math.round(v2.na*oz3),calcium:Math.round(v2.ca*oz3),calories:Math.round(v2.cal*oz3),protein:Math.round(v2.pro*oz3*10)/10,potassium:Math.round(v2.pot*oz3),magnesium:Math.round(v2.mg*oz3),oxalate:p.ox,notes:"Label values"}; }
+    if (p.perslice) { var sl=sliceNum||1; var v3=p.perslice; return {name:desc,sodium:Math.round(v3.na*sl),calcium:Math.round(v3.ca*sl),calories:Math.round(v3.cal*sl),protein:Math.round(v3.pro*sl*10)/10,potassium:Math.round(v3.pot*sl),magnesium:Math.round(v3.mg*sl),oxalate:p.ox,notes:"Label values"}; }
+    if (p.halfcan) { var v4=p.halfcan; return {name:desc,sodium:v4.na,calcium:v4.ca,calories:v4.cal,protein:v4.pro,potassium:v4.pot,magnesium:v4.mg,oxalate:p.ox,notes:"Label values"}; }
+    if (p.tin) { var v5=p.tin; return {name:desc,sodium:v5.na,calcium:v5.ca,calories:v5.cal,protein:v5.pro,potassium:v5.pot,magnesium:v5.mg,oxalate:p.ox,notes:"Label values"}; }
+    if (p.p3oz) { var v6=p.p3oz; return {name:desc,sodium:v6.na,calcium:v6.ca,calories:v6.cal,protein:v6.pro,potassium:v6.pot,magnesium:v6.mg,oxalate:p.ox,notes:"Label values"}; }
+    if (p.can) { var v7=p.can; return {name:desc,sodium:v7.na,calcium:v7.ca,calories:v7.cal,protein:v7.pro,potassium:v7.pot,magnesium:v7.mg,oxalate:p.ox,notes:"Label values"}; }
   }
   return null;
 }
 
-async function parseFood(desc, pantry) {
-  // 1. Check known products first
-  var known = lookupKnown(desc);
+
+async function parseFood(desc) {
+  // Check known products first
+  var known = checkProducts(desc);
   if (known) return known;
-  // 2. Check pantry
-  var fromPantry = lookupPantry(desc, pantry);
-  if (fromPantry) return fromPantry;
-  // 3. Ask AI
-  var sys = "Nutrition database. Pescatarian only (fish/eggs/dairy/plants - NO meat). Return ONLY a JSON object, no other text: {"name":"food name","sodium":0,"calcium":0,"calories":0,"protein":0,"potassium":0,"magnesium":0,"oxalate":"low","notes":"brief note"} Numbers in mg except calories(kcal) and protein(g).";
+  // Fall back to AI
+  const sys = `Nutrition database. Pescatarian only (no meat). Return ONLY valid JSON:
+{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence kidney stone note"}
+All mg except calories(kcal) and protein(g).`;
   try {
-    var raw = await callClaude([{role:"user",content:"Nutrition for: "+desc}], sys);
-    if (!raw || raw.indexOf("⚠️") === 0 || raw.indexOf("Error") === 0) return {error: raw||"Failed"};
-    var start2 = raw.indexOf("{");
-    var end2 = raw.lastIndexOf("}");
-    if (start2 === -1 || end2 === -1) return {error: "No data — try again"};
-    return JSON.parse(raw.slice(start2, end2+1));
+    const raw = await callClaude([{ role: "user", content: desc }], sys);
+    if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
+    const cleaned = raw.replace(/```json|```/g, "").trim();
+    const startJ = cleaned.indexOf("{");
+    const endJ = cleaned.lastIndexOf("}");
+    if (startJ===-1||endJ===-1) return {error: "Try again"};
+    return JSON.parse(cleaned.slice(startJ, endJ+1));
   } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
@@ -416,7 +372,8 @@ All mg except calories(kcal) and protein(g). Be specific about what you see.`;
 }
 
 async function getCoachTip(foodName, totals, targets, proteinTarget) {
-  const sys = `Kidney stone nutrition coach. Pescatarian only (fish/eggs/dairy/plants, NO meat). Na<${targets.sodium_mg}mg, Ca~${targets.calcium_mg}mg, protein ${proteinTarget}g today. One tip, 2 sentences max.`;
+  const sys = `You are Sofia's nutrition coach. Give ONE short, specific, actionable tip based on what she just ate and her running totals today. Max 2 sentences. Be direct and personal. Reference specific numbers. Focus on kidney stones, protein targets, or what she needs next.
+Context: kidney stones, sodium ≤${targets.sodium_mg}mg/day, calcium ~${targets.calcium_mg}mg with meals, protein target today ${proteinTarget}g.`;
   const msg = `She just logged: ${foodName}
 Running totals: sodium ${totals.sodium}mg, calcium ${totals.calcium}mg, protein ${totals.protein}g, magnesium ${totals.magnesium}mg, calories ${totals.calories}kcal.
 What's the most important thing she should do or eat next?`;
@@ -441,58 +398,17 @@ function useVoice(onResult){
 
   function startListening(){
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SpeechRecognition){alert("Voice input requires Safari on iPhone.");return;}
-    if(recRef.current){try{recRef.current.stop();}catch(e){}}
+    if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
     const rec=new SpeechRecognition();
-    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;rec.maxAlternatives=1;
-    rec.onstart=()=>setListening(true);
-    rec.onresult=e=>{
-      if(e.results&&e.results.length>0){const t=e.results[0][0].transcript;if(t&&t.trim())onResult(t.trim());}
-      setListening(false);
-    };
-    rec.onerror=e=>{
-      setListening(false);
-      if(e.error==="not-allowed")alert("Microphone blocked. Go to iPhone Settings → Safari → Microphone → Allow.");
-    };
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
+    rec.onerror=()=>setListening(false);
     rec.onend=()=>setListening(false);
-    try{rec.start();recRef.current=rec;}catch(e){setListening(false);}
+    rec.start();recRef.current=rec;setListening(true);
   }
-  function stopListening(){if(recRef.current){try{recRef.current.stop();}catch(e){}}setListening(false);}
+  function stopListening(){recRef.current?.stop();setListening(false);}
 
   return{listening,startListening,stopListening};
-}
-
-// ─── Universal mic button component ──────────────────────────────────────────
-function MicBtn({onResult,size=38}){
-  const{listening,startListening,stopListening}=useVoice(onResult);
-  return(
-    <button className={`mic-btn ${listening?"listening":"idle"}`} 
-      style={{width:size,height:size,flexShrink:0}}
-      onClick={listening?stopListening:startListening} type="button">
-      {listening?"🔴":"🎤"}
-    </button>
-  );
-}
-
-// ─── Universal photo button component ────────────────────────────────────────
-function PhotoBtn({onPhoto,size=38}){
-  const inputRef=useRef(null);
-  function handleFile(e){
-    const file=e.target.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      const b64=ev.target.result.split(",")[1];
-      onPhoto(b64,file.type||"image/jpeg");
-    };
-    reader.readAsDataURL(file);
-    e.target.value="";
-  }
-  return(
-    <label style={{width:size,height:size,borderRadius:"50%",background:"var(--cream2)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,border:"1px solid var(--border)"}}>
-      📷
-      <input ref={inputRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
-    </label>
-  );
 }
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
@@ -675,14 +591,12 @@ const STYLE=`
 `;
 
 // ─── TODAY TAB ────────────────────────────────────────────────────────────────
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
   const[meal,setMeal]=useState("breakfast");
   const[coachTip,setCoachTip]=useState(null);
-  const[cooldown,setCooldown]=useState(0);
-  const lastCallRef=useRef(0);
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -700,23 +614,8 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     const text=input||foodInput||domVal;
     if(!text.trim())return;
     if(text!==foodInput) setFoodInput(text);
-    // Enforce 4 second gap between API calls to avoid rate limiting
-    const now=Date.now();
-    const elapsed=now-lastCallRef.current;
-    if(elapsed<4000&&lastCallRef.current>0){
-      const wait=Math.ceil((4000-elapsed)/1000);
-      setCooldown(wait);
-      const iv=setInterval(()=>{
-        setCooldown(c=>{
-          if(c<=1){clearInterval(iv);return 0;}
-          return c-1;
-        });
-      },1000);
-      return;
-    }
-    lastCallRef.current=now;
     setParsing(true);setParseResult(null);setCoachTip(null);
-    const result=await parseFood(text, pantry||[]);
+    const result=await parseFood(text);
     if(!result||result.error){
       setParseResult({error: result?.error || "API call failed — tap Add to retry"});
       setParsing(false);
@@ -876,21 +775,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                 </div>
                 {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:4,fontStyle:"italic"}}>{f.notes}</div>}
               </div>
-              <div style={{display:"flex",gap:4}}>
-                <button className="food-delete" style={{fontSize:12,opacity:.5,padding:"2px 6px"}} onClick={async()=>{
-                  const newDesc=prompt("Edit food (will recalculate nutrition):",f.name);
-                  if(!newDesc||!newDesc.trim())return;
-                  const result=await parseFood(newDesc.trim(), pantry||[]);
-                  if(result&&!result.error){
-                    const updated={...f,name:result.name||newDesc.trim(),nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},oxalate:result.oxalate||f.oxalate,notes:result.notes};
-                    const u=foodLog.map(x=>x.id===f.id?updated:x);
-                    setFoodLog(u);store.set("food-log-"+todayKey(),u);
-                  } else {
-                    alert("Could not recalculate. Try again.");
-                  }
-                }}>✏️</button>
-                <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
-              </div>
+              <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
             </div>
           ))}
         </div>
@@ -1112,12 +997,11 @@ function InjectionsTab({injections,setInjections}){
         <div className="quick-prompts" style={{marginBottom:10}}>
           {COMMON.map((c,i)=><button key={i} className="quick-btn" onClick={()=>setName(c)}>{c}</button>)}
         </div>
-        <div className="input-row" style={{marginBottom:6}}>
+        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
           <input className="text-input" style={{flex:2}} placeholder="Procedure name" value={name} onChange={e=>setName(e.target.value)}/>
           <input className="text-input" style={{flex:1}} placeholder="Area (e.g. lips)" value={area} onChange={e=>setArea(e.target.value)}/>
-          <MicBtn onResult={t=>setName(p=>p?p+" "+t:t)}/>
         </div>
-        <div className="input-row" style={{marginBottom:6}}>
+        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
           <input className="text-input" type="date" value={date} onChange={e=>setDate(e.target.value)} style={{flex:1}}/>
           <input className="text-input" style={{flex:2}} placeholder="Notes (clinic, units, etc.)" value={notes} onChange={e=>setNotes(e.target.value)}/>
         </div>
@@ -1267,7 +1151,7 @@ function MedsTab({master,setMaster}){
 }
 
 // ─── SCAN TAB ────────────────────────────────────────────────────────────────
-function ScanTab({profile,onSave}){
+function ScanTab({profile}){
   const[scanning,setScanning]=useState(false);
   const[preview,setPreview]=useState(null);
   const[result,setResult]=useState(null);
@@ -1296,11 +1180,8 @@ Return ONLY valid JSON:
       <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Photograph any product for an instant verdict — food, skincare, supplements.</p>
       {!preview?(
         <>
-          <div style={{display:"flex",gap:6,marginBottom:9}}>
-            <input className="text-input" style={{flex:1}} placeholder="Optional: ask something specific…"
-              value={question} onChange={e=>setQuestion(e.target.value)}/>
-            <MicBtn onResult={t=>setQuestion(p=>p?p+" "+t:t)}/>
-          </div>
+          <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
+            value={question} onChange={e=>setQuestion(e.target.value)}/>
           <div className="photo-zone">
             <input type="file" accept="image/*" onChange={e=>scanProduct(e.target.files[0])}/>
             <div style={{fontSize:26,marginBottom:5}}>📷</div>
@@ -1331,25 +1212,9 @@ Return ONLY valid JSON:
                 {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
                 {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
               </div>
-              <div style={{marginTop:11}}>
-                <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".08em",textTransform:"uppercase"}}>Save this scan to:</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:9}}>
-                  {result.verdict!=="no"&&onSave&&[
-                    {dest:"pantry",label:"🥫 Pantry",desc:"Food/supplement label"},
-                    {dest:"skin",label:"🧴 Skincare",desc:"Skincare product"},
-                    {dest:"medical",label:"🩺 Medical",desc:"Lab result or Rx"},
-                    {dest:"meds",label:"💊 Meds",desc:"Medication"},
-                  ].map(opt=>(
-                    <button key={opt.dest} className="btn btn-outline" style={{fontSize:11,padding:"7px 11px"}}
-                      onClick={()=>{onSave(result,opt.dest);reset();}}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:7}}>
-                  <button className="btn btn-primary" onClick={reset}>Scan another</button>
-                  <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
-                </div>
+              <div style={{display:"flex",gap:7,marginTop:11}}>
+                <button className="btn btn-primary" onClick={reset}>Scan another</button>
+                <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
               </div>
             </div>
           )}
@@ -1393,7 +1258,7 @@ function MedicalTab({medical,setMedical}){
             }
           </div>
           {editing===s.key
-            ?<div><div className="input-row" style={{marginBottom:6}}><MicBtn onResult={t=>setEditVal(p=>p?p+" "+t:t)}/><span style={{fontSize:10,color:"var(--ink3)"}}>Tap mic to dictate</span></div><textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/></div>
+            ?<textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/>
             :<div className="med-text">{medical[s.key]}</div>
           }
         </div>
@@ -1404,82 +1269,29 @@ function MedicalTab({medical,setMedical}){
 
 // ─── PANTRY TAB ──────────────────────────────────────────────────────────────
 function PantryTab({pantry,setPantry}){
-  const[name,setName]=useState("");
-  const[notes,setNotes]=useState("");
-  const[cat,setCat]=useState("dairy");
-  const[ca,setCa]=useState("");
-  const[na,setNa]=useState("");
-  const[pro,setPro]=useState("");
-  const[cal,setCal]=useState("");
-  const[search,setSearch]=useState("");
-  const CATS=["dairy","fish","protein","grains","produce","condiment","other"];
-
-  function addItem(){
-    if(!name.trim())return;
-    const nutrients={calcium:Number(ca)||0,sodium:Number(na)||0,protein:Number(pro)||0,calories:Number(cal)||0};
-    const u=[...pantry,{id:Date.now(),name:name.trim(),notes:notes.trim(),nutrients,cat}];
-    setPantry(u);store.set("pantry",u);
-    setName("");setNotes("");setCa("");setNa("");setPro("");setCal("");
-  }
+  const[name,setName]=useState("");const[qty,setQty]=useState("");const[cat,setCat]=useState("protein");
+  const CATS=["protein","dairy","vegetable","fruit","grain","condiment","other"];
+  function addItem(){if(!name.trim())return;const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];setPantry(u);store.set("pantry",u);setName("");setQty("");}
   function removeItem(id){const u=pantry.filter(p=>p.id!==id);setPantry(u);store.set("pantry",u);}
-
-  const filtered=search.trim()?pantry.filter(p=>p.name.toLowerCase().indexOf(search.toLowerCase())!==-1):pantry;
-  const grouped=CATS.reduce((a,c)=>{a[c]=filtered.filter(p=>p.cat===c);return a;},{});
-
+  const grouped=CATS.reduce((a,c)=>{a[c]=pantry.filter(p=>p.cat===c);return a;},{});
   return(
     <div className="section">
       <p className="section-title">Pantry</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>
-        Your food products with exact nutrition values. Scan a label in the 📷 Scan tab to add automatically.
-      </p>
-
       <div className="add-food-area" style={{marginBottom:14}}>
-        <div className="add-food-title">Add item manually</div>
-        <div className="input-row" style={{marginBottom:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Product name (e.g. Silk Original Soy Milk)" value={name} onChange={e=>setName(e.target.value)}/>
-          <MicBtn onResult={t=>setName(p=>p?p+" "+t:t)}/>
+        <div className="add-food-title">Add item</div>
+        <div className="input-row">
+          <input className="text-input" style={{flex:2}} placeholder="Item name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
+          <input className="text-input" style={{flex:1,maxWidth:80}} placeholder="Qty" value={qty} onChange={e=>setQty(e.target.value)}/>
+          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{flex:1}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <button className="btn btn-primary" onClick={addItem}>Add</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
-          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Calcium (mg/serving)</div><input className="text-input" type="number" placeholder="e.g. 300" value={ca} onChange={e=>setCa(e.target.value)}/></div>
-          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Sodium (mg/serving)</div><input className="text-input" type="number" placeholder="e.g. 115" value={na} onChange={e=>setNa(e.target.value)}/></div>
-          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Protein (g/serving)</div><input className="text-input" type="number" placeholder="e.g. 7" value={pro} onChange={e=>setPro(e.target.value)}/></div>
-          <div><div style={{fontSize:9,color:"var(--ink3)",marginBottom:2}}>Calories (kcal/serving)</div><input className="text-input" type="number" placeholder="e.g. 110" value={cal} onChange={e=>setCal(e.target.value)}/></div>
-        </div>
-        <div className="input-row" style={{marginBottom:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 1 cup = 240ml)" value={notes} onChange={e=>setNotes(e.target.value)}/>
-          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:100}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
-        </div>
-        <button className="btn btn-primary" style={{width:"100%"}} onClick={addItem} disabled={!name.trim()}>Add to Pantry</button>
       </div>
-
-      {pantry.length>4&&(
-        <div className="input-row" style={{marginBottom:10}}>
-          <input className="text-input" style={{flex:1}} placeholder="Search pantry…" value={search} onChange={e=>setSearch(e.target.value)}/>
-          {search&&<button className="btn btn-outline" onClick={()=>setSearch("")}>Clear</button>}
-        </div>
-      )}
-
-      {filtered.length===0?(
-        <div className="empty-state"><div className="empty-icon">🥫</div><div>{search?"No items match your search":"Add your regular products here or scan labels"}</div></div>
-      ):CATS.map(c=>grouped[c]&&grouped[c].length>0&&(
+      {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add what you have at home</div></div>)
+      :CATS.map(c=>grouped[c].length>0&&(
         <div key={c} style={{marginBottom:14}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{c}</div>
           {grouped[c].map(item=>(
-            <div className="pantry-item" key={item.id}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>
-                {item.nutrients&&(item.nutrients.calcium>0||item.nutrients.sodium>0)&&(
-                  <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>
-                    {item.nutrients.calcium>0&&<span style={{marginRight:8}}>Ca {item.nutrients.calcium}mg</span>}
-                    {item.nutrients.sodium>0&&<span style={{marginRight:8}}>Na {item.nutrients.sodium}mg</span>}
-                    {item.nutrients.protein>0&&<span style={{marginRight:8}}>{item.nutrients.protein}g protein</span>}
-                    {item.nutrients.calories>0&&<span>{item.nutrients.calories} cal</span>}
-                  </div>
-                )}
-                {item.notes&&<div style={{fontSize:9,color:"var(--ink3)",fontStyle:"italic"}}>{item.notes}</div>}
-              </div>
-              <button className="food-delete" onClick={()=>removeItem(item.id)}>×</button>
-            </div>
+            <div className="pantry-item" key={item.id}><div><div style={{fontSize:12,color:"var(--ink)"}}>{item.name}</div>{item.qty&&<div style={{fontSize:9,color:"var(--ink3)"}}>{item.qty}</div>}</div><button className="food-delete" onClick={()=>removeItem(item.id)}>×</button></div>
           ))}
         </div>
       ))}
@@ -1553,18 +1365,6 @@ function ProfileTab({profile,setProfile}){
     <div className="section">
       <p className="section-title">Profile</p>
       <div className="profile-section">
-        <div className="profile-section-title">Personal information</div>
-        <div className="target-grid">
-          <div className="target-card"><div className="target-label">Name</div><input className="target-input" value={profile.name||""} onChange={e=>{const u={...profile,name:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
-          <div className="target-card"><div className="target-label">Age</div><input className="target-input" type="number" value={profile.age||""} onChange={e=>{const u={...profile,age:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
-          <div className="target-card"><div className="target-label">Height (cm)</div><input className="target-input" type="number" value={profile.height_cm||""} onChange={e=>{const u={...profile,height_cm:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
-          <div className="target-card"><div className="target-label">Weight (kg)</div><input className="target-input" type="number" value={profile.weight_kg||""} onChange={e=>{const u={...profile,weight_kg:Number(e.target.value)};setProfile(u);store.set("profile",u);}}/></div>
-          <div className="target-card"><div className="target-label">Blood type</div><input className="target-input" value={profile.blood_type||""} onChange={e=>{const u={...profile,blood_type:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
-          <div className="target-card"><div className="target-label">Doctor</div><input className="target-input" value={profile.doctor||""} onChange={e=>{const u={...profile,doctor:e.target.value};setProfile(u);store.set("profile",u);}}/></div>
-        </div>
-        {profile.weight_kg>0&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:8}}>Protein targets — Sedentary: {Math.round(profile.weight_kg*1.25)}g · Light: {Math.round(profile.weight_kg*1.7)}g · Moderate: {Math.round(profile.weight_kg*1.8)}g · Intense: {Math.round(profile.weight_kg*2.0)}g</div>}
-      </div>
-      <div className="profile-section">
         <div className="profile-section-title">Daily targets</div>
         <div className="target-grid">
           {[{key:"water_glasses",label:"Water",unit:"glasses"},{key:"sodium_mg",label:"Sodium max",unit:"mg"},{key:"calcium_mg",label:"Calcium",unit:"mg"},{key:"magnesium_mg",label:"Magnesium",unit:"mg"},{key:"potassium_mg",label:"Potassium",unit:"mg"},{key:"calories",label:"Base calories",unit:"kcal"},{key:"protein_g",label:"Base protein",unit:"g"}].map(t=>(
@@ -1576,20 +1376,12 @@ function ProfileTab({profile,setProfile}){
       <div className="profile-section">
         <div className="profile-section-title">Conditions</div>
         {profile.conditions.map((c,i)=><div className="condition-tag" key={i}>{c}<button className="remove-tag" onClick={()=>removeC(i)}>×</button></div>)}
-        <div className="input-row" style={{marginTop:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Add condition…" value={newC} onChange={e=>setNewC(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addC()}/>
-          <MicBtn onResult={t=>setNewC(p=>p?p+" "+t:t)}/>
-          <button className="btn btn-outline" onClick={addC}>Add</button>
-        </div>
+        <div className="input-row" style={{marginTop:6}}><input className="text-input" style={{flex:1}} placeholder="Add condition…" value={newC} onChange={e=>setNewC(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addC()}/><button className="btn btn-outline" onClick={addC}>Add</button></div>
       </div>
       <div className="profile-section">
         <div className="profile-section-title">Dietary restrictions</div>
         {profile.restrictions.map((r,i)=><div className="restriction-tag" key={i}>{r}<button className="remove-tag" onClick={()=>removeR(i)}>×</button></div>)}
-        <div className="input-row" style={{marginTop:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Add restriction…" value={newR} onChange={e=>setNewR(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addR()}/>
-          <MicBtn onResult={t=>setNewR(p=>p?p+" "+t:t)}/>
-          <button className="btn btn-outline" onClick={addR}>Add</button>
-        </div>
+        <div className="input-row" style={{marginTop:6}}><input className="text-input" style={{flex:1}} placeholder="Add restriction…" value={newR} onChange={e=>setNewR(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addR()}/><button className="btn btn-outline" onClick={addR}>Add</button></div>
       </div>
       <div className="profile-section">
         <div className="profile-section-title">Notes for coach</div>
@@ -1602,14 +1394,9 @@ function ProfileTab({profile,setProfile}){
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
-  age:54,
-  height_cm:160,
-  weight_kg:44,
-  blood_type:"",
-  doctor:"Dra. Zanchetta, Maria Belen",
-  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
-  conditions:["Kidney stones (bilateral, multiple small)","Idiopathic Hypercalciuria","HRT (started December)","Subscapular nerve — recovering"],
-  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian — no meat"],
+  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:55,potassium_mg:3500,magnesium_mg:320},
+  conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
+  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary"],
   notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always.",
 };
 
@@ -1630,35 +1417,18 @@ function App(){
 
   useEffect(()=>{
     async function load(){
-      const p=await store.get("profile");if(p)setProfile(p);
-      const pan=await store.get("pantry");
-      if(pan&&pan.length>0){setPantry(pan);}
-      else{
-        const defaultPantry=[
-          {id:"silk-soy",name:"Silk Original Soy Milk",notes:"Per 1 cup (240ml)",nutrients:{calcium:300,sodium:115,protein:7,calories:110},cat:"dairy"},
-          {id:"tj-kefir",name:"TJ's Plain Low-Fat Kefir",notes:"Per 1 cup (240ml)",nutrients:{calcium:440,sodium:125,protein:11,calories:110},cat:"dairy"},
-          {id:"tj-swiss",name:"Swiss Cheese",notes:"Per 1 oz (28g)",nutrients:{calcium:224,sodium:54,protein:8,calories:108},cat:"dairy"},
-          {id:"tj-multigrain",name:"TJ's Multigrain Bread",notes:"Per 1 slice",nutrients:{calcium:20,sodium:150,protein:4,calories:110},cat:"grains"},
-          {id:"ortiz-tuna",name:"Ortiz Bonito del Norte Tuna",notes:"Per half can (55g)",nutrients:{calcium:15,sodium:280,protein:22,calories:130},cat:"fish"},
-          {id:"tj-mussels",name:"TJ's Lightly Smoked Mussels",notes:"Per tin (85g) — HIGH Na",nutrients:{calcium:60,sodium:480,protein:18,calories:150},cat:"fish"},
-          {id:"tj-tofu",name:"TJ's High Protein Super Firm Tofu",notes:"Per 3oz (85g)",nutrients:{calcium:200,sodium:55,protein:11,calories:90},cat:"protein"},
-          {id:"sardines",name:"Sardines with bones",notes:"Per can — great Ca source",nutrients:{calcium:351,sodium:282,protein:22,calories:190},cat:"fish"},
-          {id:"eggs",name:"Eggs",notes:"Per egg",nutrients:{calcium:28,sodium:63,protein:6,calories:78},cat:"protein"},
-          {id:"avocado",name:"Avocado",notes:"Per half — low oxalate",nutrients:{calcium:12,sodium:5,protein:1.5,calories:120},cat:"produce"},
-          {id:"gouda",name:"Gouda Cheese",notes:"Per oz — higher Na than Swiss",nutrients:{calcium:198,sodium:232,protein:7,calories:101},cat:"dairy"},
-          {id:"greek-yogurt",name:"Greek Yogurt (plain)",notes:"Per cup",nutrients:{calcium:200,sodium:55,protein:17,calories:100},cat:"dairy"},
-        ];
-        setPantry(defaultPantry);
-        store.set("pantry",defaultPantry);
-      }
-      const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
-      const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
-      const m=await store.get("master");if(m)setMaster(m);
-      const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
-      const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
-      const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
-      const inj=await store.get("injections");if(inj)setInjections(inj);
-      const med=await store.get("medical");if(med)setMedical(med);
+      try{
+        const p=await store.get("profile");if(p)setProfile(p);
+        const pan=await store.get("pantry");if(pan&&pan.length>0){setPantry(pan);}
+        const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
+        const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
+        const m=await store.get("master");if(m)setMaster(m);
+        const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
+        const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
+        const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
+        const inj=await store.get("injections");if(inj)setInjections(inj);
+        const med=await store.get("medical");if(med)setMedical(med);
+      }catch(e){console.warn("Load error:",e);}
       setLoaded(true);
       document.getElementById("splash").style.display="none";
       document.getElementById("root").style.display="block";
@@ -1667,13 +1437,6 @@ function App(){
     if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
   },[]);
 
-  function handleScanSave(r,dest){
-    const item={id:Date.now(),name:r.product_name||"Scanned product",notes:r.serving_advice||"",nutrients:{},cat:"other"};
-    if(dest==="pantry"){const u=[...pantry,item];setPantry(u);store.set("pantry",u);}
-    else if(dest==="skin"){alert("Saved! (Skincare tab integration coming soon)");}
-    else if(dest==="medical"){alert("Saved! (Medical tab integration coming soon)");}
-    else if(dest==="meds"){alert("Saved! (Meds tab integration coming soon)");}
-  }
   if(!loaded)return null;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
@@ -1699,11 +1462,11 @@ function App(){
           <div className="header-date">{today}</div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave}/>}
+        {tab==="scan"&&<ScanTab profile={profile}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
