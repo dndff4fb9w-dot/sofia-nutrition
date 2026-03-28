@@ -1151,7 +1151,7 @@ function MedsTab({master,setMaster}){
 }
 
 // ─── SCAN TAB ────────────────────────────────────────────────────────────────
-function ScanTab({profile}){
+function ScanTab({profile,onSave}){
   const[scanning,setScanning]=useState(false);
   const[preview,setPreview]=useState(null);
   const[result,setResult]=useState(null);
@@ -1212,9 +1212,18 @@ Return ONLY valid JSON:
                 {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
                 {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
               </div>
-              <div style={{display:"flex",gap:7,marginTop:11}}>
-                <button className="btn btn-primary" onClick={reset}>Scan another</button>
-                <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+              <div style={{marginTop:11}}>
+                <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".08em",textTransform:"uppercase"}}>Save to:</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:9}}>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"pantry")}>🥫 Pantry</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"skin")}>🧴 Skincare</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"medical")}>🩺 Medical</button>
+                  <button className="btn btn-outline" style={{fontSize:11}} onClick={()=>onSave&&onSave(result,"meds")}>💊 Meds</button>
+                </div>
+                <div style={{display:"flex",gap:7}}>
+                  <button className="btn btn-primary" onClick={reset}>Scan another</button>
+                  <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+                </div>
               </div>
             </div>
           )}
@@ -1269,35 +1278,53 @@ function MedicalTab({medical,setMedical}){
 
 // ─── PANTRY TAB ──────────────────────────────────────────────────────────────
 function PantryTab({pantry,setPantry}){
-  const[name,setName]=useState("");const[qty,setQty]=useState("");const[cat,setCat]=useState("protein");
-  const CATS=["protein","dairy","vegetable","fruit","grain","condiment","other"];
-  function addItem(){if(!name.trim())return;const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];setPantry(u);store.set("pantry",u);setName("");setQty("");}
+  const[name,setName]=useState("");
+  const[qty,setQty]=useState("");
+  const[cat,setCat]=useState("dairy");
+  const CATS=["dairy","fish","protein","grain","produce","condiment","other"];
+  const{listening:micListening,startListening:micStart,stopListening:micStop}=useVoice(t=>setName(p=>p?p+" "+t:t));
+  function addItem(){
+    if(!name.trim())return;
+    const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];
+    setPantry(u);store.set("pantry",u);setName("");setQty("");
+  }
   function removeItem(id){const u=pantry.filter(p=>p.id!==id);setPantry(u);store.set("pantry",u);}
   const grouped=CATS.reduce((a,c)=>{a[c]=pantry.filter(p=>p.cat===c);return a;},{});
   return(
     <div className="section">
       <p className="section-title">Pantry</p>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>Your products. Scan a label in the 📷 Scan tab to save here automatically.</p>
       <div className="add-food-area" style={{marginBottom:14}}>
-        <div className="add-food-title">Add item</div>
+        <div className="add-food-title">Add item manually</div>
+        <div className="input-row" style={{marginBottom:6}}>
+          <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
+          <button className={`mic-btn ${micListening?"listening":"idle"}`} onClick={micListening?micStop:micStart}>{micListening?"🔴":"🎤"}</button>
+        </div>
         <div className="input-row">
-          <input className="text-input" style={{flex:2}} placeholder="Item name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
-          <input className="text-input" style={{flex:1,maxWidth:80}} placeholder="Qty" value={qty} onChange={e=>setQty(e.target.value)}/>
-          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{flex:1}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup, 115mg Na)" value={qty} onChange={e=>setQty(e.target.value)}/>
+          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:90}}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
           <button className="btn btn-primary" onClick={addItem}>Add</button>
         </div>
       </div>
-      {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add what you have at home</div></div>)
+      {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add your regular products here</div></div>)
       :CATS.map(c=>grouped[c].length>0&&(
         <div key={c} style={{marginBottom:14}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{c}</div>
           {grouped[c].map(item=>(
-            <div className="pantry-item" key={item.id}><div><div style={{fontSize:12,color:"var(--ink)"}}>{item.name}</div>{item.qty&&<div style={{fontSize:9,color:"var(--ink3)"}}>{item.qty}</div>}</div><button className="food-delete" onClick={()=>removeItem(item.id)}>×</button></div>
+            <div className="pantry-item" key={item.id}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>
+                {item.qty&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{item.qty}</div>}
+              </div>
+              <button className="food-delete" onClick={()=>removeItem(item.id)}>×</button>
+            </div>
           ))}
         </div>
       ))}
     </div>
   );
 }
+
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical}){
@@ -1466,7 +1493,15 @@ function App(){
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile}/>}
+        {tab==="scan"&&<ScanTab profile={profile} onSave={(r,dest)=>{
+  if(dest==="pantry"){
+    const item={id:Date.now(),name:r.product_name||"Scanned product",qty:r.serving_advice||"",cat:"other"};
+    const u=[...pantry,item];setPantry(u);store.set("pantry",u);
+    alert("Saved to Pantry: "+item.name);
+  } else {
+    alert("Saved to "+dest+"! (full integration coming soon)");
+  }
+}}/>}}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
