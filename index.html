@@ -292,39 +292,92 @@ function chkKP(d){
   return null;
 }
 
-async function parseFood(desc) {
-  var kp=chkKP(desc);if(kp)return kp;
-  const sys = `Nutrition database. Pescatarian only — no chicken, beef, pork or meat. Return ONLY valid JSON:
-{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"brief note"}
-All mg except calories(kcal) and protein(g).`;
+function safeParseJSON(raw) {
+  if (!raw) return null;
+  // Strip markdown fences and whitespace
+  let cleaned = raw.replace(/```json|```/g, "").trim();
+  // Extract first JSON object
+  const s = cleaned.indexOf("{"); const e = cleaned.lastIndexOf("}");
+  if (s === -1 || e === -1) return null;
+  try { return JSON.parse(cleaned.slice(s, e+1)); } catch {}
+  // Try fixing common issues: trailing commas, single quotes
   try {
-    const raw = await callClaude([{ role: "user", content: desc }], sys);
-    if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const s=cleaned.indexOf("{");const e=cleaned.lastIndexOf("}");
-    if(s===-1||e===-1)return{error:"Try again"};
-    return JSON.parse(cleaned.slice(s,e+1));
-  } catch(e) { return {error: "Try again — " + e.message}; }
+    const fixed = cleaned.slice(s, e+1)
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/'/g, '"');
+    return JSON.parse(fixed);
+  } catch { return null; }
 }
 
-// ─── NEW: Combined text + multiple photos ─────────────────────────────────────
-async function parseFoodCombined(text, photos) {
-  if (photos.length === 0) return parseFood(text);
-  if (text.trim()) { const kp=chkKP(text); if(kp) return kp; }
-  const sys = `Nutrition database. Pescatarian only — NEVER suggest chicken, beef, pork or meat. Return ONLY valid JSON:
-{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"brief note"}
-All mg except calories(kcal) and protein(g). If multiple photos, analyze all together as one meal.`;
-  const prompt = text.trim()
-    ? `Photos show the product(s) or food. I describe what I had: "${text}". Use the photos for exact label nutrition values; use my description for portions/combinations. Return combined nutrition for everything together.`
-    : "Identify all food items in the photo(s) and estimate combined nutrition.";
+// --- Smart lookup hierarchy ---
+// Priority: 1) today's log  2) KP hardcoded  3) pantry match  4) generic AI
+
+function fuzzyMatch(a, b) {
+  const al=a.toLowerCase(); const bl=b.toLowerCase();
+  if(al.includes(bl)||bl.includes(al))return true;
+  const aw=al.split(/\s+/).filter(w=>w.length>3);
+  const bw=bl.split(/\s+/).filter(w=>w.length>3);
+  return aw.filter(w=>bw.some(bwi=>bwi.includes(w)||w.includes(bwi))).length>=1;
+}
+
+function chkTodayLog(desc, foodLog) {
+  if(!foodLog||!foodLog.length)return null;
+  for(const entry of [...foodLog].reverse()){
+    if(entry.nutrients&&fuzzyMatch(desc,entry.name)){
+      return{...entry.nutrients,name:entry.name,oxalate:entry.oxalate||"low",notes:"Matched today's earlier entry"};
+    }
+  }
+  return null;
+}
+
+function chkPantryMatch(desc, pantry) {
+  if(!pantry||!pantry.length)return null;
+  for(const item of pantry){if(fuzzyMatch(desc,item.name))return item;}
+  return null;
+}
+
+const NUTRITION_SYS=`You are a nutrition database. Pescatarian only - no meat.
+Respond with ONLY a raw JSON object, no markdown, no backticks:
+{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low","notes":"one sentence"}
+All values in mg except calories(kcal) and protein(g). oxalate must be "low", "med", or "high".`;
+
+async function parseFood(desc, pantry, foodLog) {
+  const logMatch=chkTodayLog(desc,foodLog);if(logMatch)return logMatch;
+  var kp=chkKP(desc);if(kp)return kp;
+  const pantryItem=chkPantryMatch(desc,pantry);
+  const query=pantryItem?`${desc} (brand: ${pantryItem.name}${pantryItem.qty?" - "+pantryItem.qty:""})`:desc;
   try {
-    const raw = await callClaudeWithImages(photos, prompt, sys);
-    if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
-    const cleaned = raw.replace(/```json|```/g,"").trim();
-    const s=cleaned.indexOf("{"); const e=cleaned.lastIndexOf("}");
-    if(s===-1||e===-1) return {error:"Try again"};
-    return JSON.parse(cleaned.slice(s,e+1));
-  } catch(e) { return {error:"Try again — "+e.message}; }
+    const raw=await callClaude([{role:"user",content:`Nutrition for: ${query}`}],NUTRITION_SYS);
+    if(!raw||raw.startsWith("⚠️")||raw.startsWith("Error"))return{error:raw||"Failed"};
+    const parsed=safeParseJSON(raw);
+    if(!parsed)return{error:"Could not parse - try again"};
+    if(pantryItem)parsed.notes=(parsed.notes||"")+` (pantry: ${pantryItem.name})`;
+    return parsed;
+  } catch(e){return{error:"Try again - "+e.message};}
+}
+
+async function parseFoodCombined(text, photos, pantry, foodLog) {
+  if(photos.length===0)return parseFood(text,pantry,foodLog);
+  if(text.trim()){const kp=chkKP(text);if(kp)return kp;}
+  const pantryItem=chkPantryMatch(text,pantry);
+  const sys=`You are a nutrition database. Pescatarian only - no meat.
+IMPORTANT: If a nutrition label photo is included, use those EXACT values - do not estimate.
+If multiple photos (front + label), use both to identify product and get label values.
+Include ALL foods mentioned in the description - add their nutrition to the total.
+Respond with ONLY a raw JSON object, no markdown, no backticks:
+{"name":"full meal description","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low","notes":"one sentence"}
+All values in mg except calories(kcal) and protein(g). oxalate must be "low", "med", or "high".`;
+  const brandHint=pantryItem?` This may be: ${pantryItem.name}.`:"";
+  const prompt=text.trim()
+    ?`Photos show the product(s).${brandHint} I had: "${text}". Use label photo for exact values. Include everything I described.`
+    :`Identify all food in the photo(s).${brandHint} Return combined nutrition.`;
+  try {
+    const raw=await callClaudeWithImages(photos,prompt,sys);
+    if(!raw||raw.startsWith("⚠️")||raw.startsWith("Error"))return{error:raw||"Failed"};
+    const parsed=safeParseJSON(raw);
+    if(!parsed)return{error:"Could not parse - try again"};
+    return parsed;
+  } catch(e){return{error:"Try again - "+e.message};}
 }
 
 async function getCoachTip(foodName, totals, targets, proteinTarget) {
@@ -572,7 +625,7 @@ const STYLE=`
 `;
 
 // ─── TODAY TAB ────────────────────────────────────────────────────────────────
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs}){
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
@@ -606,7 +659,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     if(!text && stagedPhotos.length===0) return;
     setParsing(true);setParseResult(null);setCoachTip(null);
     // FIX #3: Combined photo + text
-    const result=await parseFoodCombined(text, stagedPhotos);
+    const result=await parseFoodCombined(text, stagedPhotos, pantry, foodLog);
     if(!result||result.error){
       setParseResult({error: result?.error || "API call failed — tap Add to retry"});
       setParsing(false);
@@ -1505,7 +1558,7 @@ function App(){
           <div className="header-date">{today}</div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
