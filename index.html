@@ -349,6 +349,28 @@ function fileToBase64(file) {
   });
 }
 
+// Compress image to max ~800px wide and quality 0.75 before sending
+function compressImage(file, maxWidth=800, quality=0.75) {
+  return new Promise((res) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const b64 = canvas.toDataURL("image/jpeg", quality).split(",")[1];
+        res({ b64, mediaType: "image/jpeg" });
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function useVoice(onResult){
   const [listening,setListening]=useState(false);
   const recRef=useRef(null);
@@ -571,14 +593,12 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   function toggleTaken(id){const u={...takenToday,[id]:!takenToday[id]};setTakenToday(u);store.set("taken-"+todayKey(),u);}
 
   async function stagePhotos(files){
-    const newPhotos=await Promise.all(Array.from(files).map(async f=>({
-      b64:await fileToBase64(f),
-      mediaType:f.type||"image/jpeg",
-      preview:URL.createObjectURL(f)
-    })));
+    const newPhotos=await Promise.all(Array.from(files).map(async f=>{
+      const compressed=await compressImage(f);
+      return{...compressed,preview:URL.createObjectURL(f)};
+    }));
     setStagedPhotos(p=>[...p,...newPhotos]);
   }
-
   function removePhoto(idx){setStagedPhotos(p=>p.filter((_,i)=>i!==idx));}
 
   async function handleAddFood(){
@@ -1079,9 +1099,10 @@ function ScanTab({profile,onSave,skinProducts,setSkinProducts}){
   const[destination,setDestination]=useState("pantry");
 
   async function stageScanPhotos(files){
-    const newImgs=await Promise.all(Array.from(files).map(async f=>({
-      b64:await fileToBase64(f),mediaType:f.type||"image/jpeg",preview:URL.createObjectURL(f)
-    })));
+    const newImgs=await Promise.all(Array.from(files).map(async f=>{
+      const compressed=await compressImage(f);
+      return{...compressed,preview:URL.createObjectURL(f)};
+    }));
     setStagedImgs(p=>[...p,...newImgs]);
     setPreviews(p=>[...p,...newImgs.map(i=>i.preview)]);
   }
@@ -1254,8 +1275,7 @@ function PantryTab({pantry,setPantry}){
               onChange={async e=>{
                 const files=Array.from(e.target.files);
                 if(!files.length)return;
-                // Use all photos together to identify the product
-                const imgs=await Promise.all(files.map(async f=>({b64:await fileToBase64(f),mediaType:f.type||"image/jpeg"})));
+                const imgs=await Promise.all(files.map(f=>compressImage(f)));
                 const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");
                 setName(raw.slice(0,80)||"Scanned product");
                 e.target.value="";
