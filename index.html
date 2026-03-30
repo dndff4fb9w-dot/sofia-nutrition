@@ -33,20 +33,17 @@ const store = {
 };
 function todayKey(){return new Date().toISOString().slice(0,10);}
 
-// ─── Weight & protein targets ─────────────────────────────────────────────────
 const WEIGHT_KG = 44;
-// sedentary=1.25g/kg=55g, light=1.7g/kg=75g, moderate=1.8g/kg=80g, intense=2.0g/kg=88→90g
 
 const ACTIVITIES = [
   {id:"pilates-reformer",name:"Pilates Reformer",emoji:"🛏",duration:50,intensity:"intense",cal:220,protein:90,category:"Pilates"},
   {id:"pilates-mat",name:"Pilates Mat + Weights",emoji:"🏋️",duration:50,intensity:"intense",cal:200,protein:90,category:"Pilates"},
   {id:"barre",name:"Barre",emoji:"🩰",duration:50,intensity:"moderate",cal:180,protein:80,category:"Barre"},
-  {id:"walking",name:"Walking",emoji:"🚶",duration:45,intensity:"light",cal:120,protein:75,category:"Cardio"},
-  {id:"red-light",name:"Red Light Therapy",emoji:"💡",duration:20,intensity:"recovery",cal:0,protein:55,category:"Recovery"},
+  {id:"walking",name:"Walking",emoji:"🚶",duration:30,intensity:"light",cal:120,protein:75,category:"Cardio",hasDistance:true},
+  {id:"red-light",name:"Red Light Therapy",emoji:"💡",duration:20,intensity:"recovery",cal:0,protein:65,category:"Recovery"},
   {id:"arm-bands",name:"Arm Band Exercises",emoji:"💪",duration:15,intensity:"light",cal:40,protein:75,category:"Rehab",notes:"Subscapular nerve recovery"},
 ];
 
-// ─── Skincare schedule (0=Sun…6=Sat) ─────────────────────────────────────────
 const SK_MORNING = ["Vitamin C serum","Hyaluronic acid serum","Face cream (rotate)","SPF"];
 const SK_EVENING = {
   0:["Cleanse","Lactic acid","Night cream"],
@@ -59,7 +56,6 @@ const SK_EVENING = {
 };
 const SK_HANDS = ["Retinol","La Roche-Posay barrier cream","Vaseline on top"];
 
-// ─── Progesterone cycles ──────────────────────────────────────────────────────
 const PROG_CYCLES = [
   {start:"2025-04-02",end:"2025-04-13"},
   {start:"2025-05-04",end:"2025-05-15"},
@@ -71,7 +67,6 @@ const PROG_CYCLES = [
 function isProgDay(k){return PROG_CYCLES.some(c=>k>=c.start&&k<=c.end);}
 function daysUntilProg(k){const n=PROG_CYCLES.find(c=>c.start>k);if(!n)return null;const diff=Math.ceil((new Date(n.start)-new Date(k))/(86400000));return diff;}
 
-// ─── Master supplement/medication list ───────────────────────────────────────
 const DEFAULT_MASTER = [
   {id:"vit-d-zinc",name:"Vitamin D3 + Zinc",dose:"",category:"supplement",time:"morning",notes:"",paused:false,
    synergies:[
@@ -97,9 +92,8 @@ const DEFAULT_MASTER = [
   {id:"propranolol",name:"Propranolol Gador",dose:"40mg",category:"medication",time:"as needed",notes:"Beta-blocker. Argentine brand. For heart rate/anxiety/migraine as prescribed.",paused:false,synergies:[]},
 ];
 
-// ─── Medical context ──────────────────────────────────────────────────────────
 const DEFAULT_MEDICAL = {
-  kidney:`KIDNEY STONES (bilateral, multiple small — Dr. Sanchetta protocol):
+  kidney:`KIDNEY STONES (bilateral, multiple small — Dr. Zanchetta protocol):
 • Sodium ≤1500mg/day — sodium increases urinary calcium excretion = more stones
 • Oxalate: LOW. High-oxalate: spinach, almonds, cashews, beets, chocolate, peanuts, rhubarb
 • Calcium ~1000mg/day ALWAYS WITH MEALS — binds oxalate in gut, prevents absorption. Never alone.
@@ -125,7 +119,6 @@ const DEFAULT_MEDICAL = {
 • Weight: 44kg current`
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getProteinTarget(exLogs){
   if(!exLogs||!exLogs.length)return 65;
   const best=exLogs.reduce((m,e)=>{
@@ -140,7 +133,6 @@ function getCalTarget(exLogs,base=1800){
   const burned=exLogs.reduce((s,e)=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return s+(a?a.cal:0);},0);
   return base+Math.round(burned*0.6);
 }
-
 function computeTotals(fl){
   const t={sodium:0,calcium:0,calories:0,protein:0,potassium:0,magnesium:0};
   for(const f of fl)if(f.nutrients)for(const k of Object.keys(t))t[k]+=f.nutrients[k]||0;
@@ -160,11 +152,12 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
       if(cur<syn.threshold)gaps.push(`${item.name} needs ${syn.label} (${cur}/${syn.threshold}${syn.nutrient.includes("_mg")?"mg":"g"})`);
     }
   }
-  const todayEx=exLogs&&exLogs.length?exLogs.map(e=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return a?`${a.name} ${e.duration}min`:""}).join(", "):"none";
+  const todayEx=exLogs&&exLogs.length?exLogs.map(e=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return a?`${a.name} ${e.duration}min${e.distance?" ("+e.distance+" "+e.distanceUnit+")":""}`:""}).filter(Boolean).join(", "):"none";
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
 
   return `You are Sofia's personal nutrition and health coach. Expert, warm, direct, specific. No disclaimers. Reference her medical context always.
+CRITICAL: Sofia is PESCATARIAN — NEVER suggest chicken, beef, pork, lamb, or any meat. Only fish, seafood, eggs, dairy, plant foods.
 
 ## MEDICAL CONTEXT
 ${medical.kidney}
@@ -191,13 +184,13 @@ Running totals: Na ${totals.sodium}mg | Ca ${totals.calcium}mg | Mg ${totals.mag
 ${pantry.map(p=>p.name+(p.qty?` (${p.qty})`:"")).join(", ")||"Not logged"}
 
 ## CRITICAL RULES
-1. Oxalate + calcium at same meal = safe (oxalate excreted). High oxalate alone = kidney stone risk.
+1. Oxalate + calcium at same meal = safe. High oxalate alone = kidney stone risk.
 2. Vitamin D needs magnesium to activate.
 3. Lemon water daily = citrate = stone prevention.
 4. Sodium > 1500mg = calcium lost in urine = more stones.
 5. Animal protein in one sitting = uric acid load. Spread it.
 6. Hydration is #1. Flag if behind.
-7. Actron/ibuprofen = NSAID = kidney stress. Always flag if she mentions it.
+7. Actron/ibuprofen = NSAID = kidney stress. Always flag.
 8. B6/Folate/B12 important because estrogen affects folate metabolism.
 9. Calcium ALWAYS with food — never alone.
 10. Today's protein target is ${proteinTarget}g — adjusted for ${todayEx}.
@@ -205,7 +198,6 @@ ${pantry.map(p=>p.name+(p.qty?` (${p.qty})`:"")).join(", ")||"Not logged"}
 When suggesting meals: use pantry, account for today's totals and exercise, explain why it works for TODAY specifically. Bold foods and numbers.`;
 }
 
-// ─── API functions (direct Anthropic calls) ───────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function fetchWithTimeout(url, options, timeoutMs=25000) {
@@ -249,35 +241,30 @@ async function callClaude(messages, system, retries=3) {
   }
 }
 
+// Single image call
 async function callClaudeWithImage(b64, mediaType, prompt, system, retries=3) {
+  return callClaudeWithImages([{b64, mediaType}], prompt, system, retries);
+}
+
+// ─── NEW: Multi-image call ────────────────────────────────────────────────────
+async function callClaudeWithImages(images, textPrompt, system, retries=3) {
   for (let i = 0; i < retries; i++) {
     try {
       if (i > 0) await sleep(3000 * i);
+      const content = [
+        ...images.map(img => ({ type:"image", source:{ type:"base64", media_type:img.mediaType, data:img.b64 }})),
+        { type:"text", text:textPrompt }
+      ];
       const r = await fetchWithTimeout("/.netlify/functions/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001", max_tokens: 1200, system,
-          messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
-            { type: "text", text: prompt }
-          ]}],
-        }),
+        body: JSON.stringify({ model:"claude-haiku-4-5-20251001", max_tokens:1200, system, messages:[{role:"user",content}] }),
       });
-      if (!r.ok) {
-        if (i < retries-1) { await sleep(3000); continue; }
-        return "⚠️ Server error " + r.status;
-      }
+      if (!r.ok) { if(i<retries-1){await sleep(3000);continue;} return "⚠️ Server error "+r.status; }
       const d = await r.json();
-      if (d.error) {
-        if (i < retries-1) { await sleep(5000); continue; }
-        return "Error: " + d.error.message;
-      }
+      if (d.error) { if(i<retries-1){await sleep(5000);continue;} return "Error: "+d.error.message; }
       return d.content?.[0]?.text || "No response.";
-    } catch(e) {
-      if (i === retries-1) return "⚠️ " + e.message;
-      await sleep(3000);
-    }
+    } catch(e) { if(i===retries-1) return "⚠️ "+e.message; await sleep(3000); }
   }
 }
 
@@ -307,7 +294,7 @@ function chkKP(d){
 
 async function parseFood(desc) {
   var kp=chkKP(desc);if(kp)return kp;
-  const sys = `Nutrition database. Pescatarian only. Return ONLY valid JSON:
+  const sys = `Nutrition database. Pescatarian only — no chicken, beef, pork or meat. Return ONLY valid JSON:
 {"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"brief note"}
 All mg except calories(kcal) and protein(g).`;
   try {
@@ -320,19 +307,30 @@ All mg except calories(kcal) and protein(g).`;
   } catch(e) { return {error: "Try again — " + e.message}; }
 }
 
-async function parseFoodFromImage(b64, mediaType) {
-  const sys = `You are looking at a photo of food. Identify what's on the plate and estimate nutrition.
-Return ONLY valid JSON, no markdown:
-{"name":"description of what you see","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"one sentence for kidney stone prevention"}
-All mg except calories(kcal) and protein(g). Be specific about what you see.`;
+// ─── NEW: Combined text + multiple photos ─────────────────────────────────────
+async function parseFoodCombined(text, photos) {
+  if (photos.length === 0) return parseFood(text);
+  if (text.trim()) { const kp=chkKP(text); if(kp) return kp; }
+  const sys = `Nutrition database. Pescatarian only — NEVER suggest chicken, beef, pork or meat. Return ONLY valid JSON:
+{"name":"display name","sodium":number,"calcium":number,"calories":number,"protein":number,"potassium":number,"magnesium":number,"oxalate":"low"|"med"|"high","notes":"brief note"}
+All mg except calories(kcal) and protein(g). If multiple photos, analyze all together as one meal.`;
+  const prompt = text.trim()
+    ? `Photos show the product(s) or food. I describe what I had: "${text}". Use the photos for exact label nutrition values; use my description for portions/combinations. Return combined nutrition for everything together.`
+    : "Identify all food items in the photo(s) and estimate combined nutrition.";
   try {
-    const raw = await callClaudeWithImage(b64, mediaType, "What food is this? Estimate the nutrition.", sys);
-    return JSON.parse(raw.replace(/```json|```/g, "").trim());
-  } catch { return null; }
+    const raw = await callClaudeWithImages(photos, prompt, sys);
+    if (!raw || raw.startsWith("⚠️") || raw.startsWith("Error")) return {error: raw||"Failed"};
+    const cleaned = raw.replace(/```json|```/g,"").trim();
+    const s=cleaned.indexOf("{"); const e=cleaned.lastIndexOf("}");
+    if(s===-1||e===-1) return {error:"Try again"};
+    return JSON.parse(cleaned.slice(s,e+1));
+  } catch(e) { return {error:"Try again — "+e.message}; }
 }
 
 async function getCoachTip(foodName, totals, targets, proteinTarget) {
+  // FIX: Added pescatarian rule
   const sys = `You are Sofia's nutrition coach. Give ONE short, specific, actionable tip based on what she just ate and her running totals today. Max 2 sentences. Be direct and personal. Reference specific numbers. Focus on kidney stones, protein targets, or what she needs next.
+CRITICAL: Sofia is PESCATARIAN — NEVER suggest chicken, beef, pork, or any meat. Only fish, seafood, eggs, dairy, plant foods.
 Context: kidney stones, sodium ≤${targets.sodium_mg}mg/day, calcium ~${targets.calcium_mg}mg with meals, protein target today ${proteinTarget}g.`;
   const msg = `She just logged: ${foodName}
 Running totals: sodium ${totals.sodium}mg, calcium ${totals.calcium}mg, protein ${totals.protein}g, magnesium ${totals.magnesium}mg, calories ${totals.calories}kcal.
@@ -351,11 +349,9 @@ function fileToBase64(file) {
   });
 }
 
-// ─── Voice input hook ─────────────────────────────────────────────────────────
 function useVoice(onResult){
   const [listening,setListening]=useState(false);
   const recRef=useRef(null);
-
   function startListening(){
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
@@ -367,7 +363,6 @@ function useVoice(onResult){
     rec.start();recRef.current=rec;setListening(true);
   }
   function stopListening(){recRef.current?.stop();setListening(false);}
-
   return{listening,startListening,stopListening};
 }
 
@@ -381,9 +376,13 @@ const STYLE=`
   .header{padding:24px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between}
   .header-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:300;color:var(--green)}
   .header-date{font-size:10px;color:var(--ink3);letter-spacing:.1em;text-transform:uppercase}
-  .nav{display:flex;border-bottom:1px solid var(--border);background:var(--cream);position:sticky;top:0;z-index:10;overflow-x:auto}
-  .nav-btn{flex:1;min-width:46px;padding:12px 3px;font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;background:none;border:none;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+
+  /* FIX #5: Tab bar — no flex:1, natural widths, scrollable */
+  .nav{display:flex;border-bottom:1px solid var(--border);background:var(--cream);position:sticky;top:0;z-index:10;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .nav::-webkit-scrollbar{display:none}
+  .nav-btn{flex:0 0 auto;padding:12px 10px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;background:none;border:none;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
   .nav-btn.active{color:var(--green);border-bottom-color:var(--green)}
+
   .section{padding:18px}
   .section-title{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:400;color:var(--green);margin-bottom:14px}
   .day-ribbon{background:var(--green);color:white;border-radius:12px;padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
@@ -395,14 +394,12 @@ const STYLE=`
   .water-glass.filled{background:var(--green2)}
   .water-label{font-size:9px;color:var(--green);letter-spacing:.08em;text-transform:uppercase}
   .water-count{font-family:'Cormorant Garamond',serif;font-size:18px;color:var(--green)}
-  /* status strip */
   .status-strip{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
   .status-pill{padding:6px 12px;border-radius:20px;font-size:10px;display:flex;align-items:center;gap:5px}
   .status-pill.prog{background:var(--rose2);color:var(--rose)}
   .status-pill.prog-off{background:var(--cream2);color:var(--ink3)}
   .status-pill.ex{background:var(--green3);color:var(--green2)}
   .status-pill.protein{background:var(--blue2);color:var(--blue)}
-  /* master items */
   .master-item{background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;transition:all .2s}
   .master-item.taken{border-color:var(--green2);background:var(--green3)}
   .master-item.medication{border-left:3px solid var(--blue)}
@@ -466,11 +463,19 @@ const STYLE=`
   .parse-result{background:var(--green3);border:1px solid #b2dfdb;border-radius:8px;padding:9px 12px;margin-top:7px;font-size:11px;line-height:1.6}
   .parse-result strong{color:var(--green)}
   .add-note{font-size:10px;color:var(--ink3);margin-top:5px}
-  /* voice button */
   .mic-btn{width:38px;height:38px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s;flex-shrink:0}
   .mic-btn.idle{background:var(--cream2);color:var(--ink3)}
   .mic-btn.listening{background:var(--terra);color:white;animation:pulse 1s infinite}
   @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+  /* FIX: photo preview strip */
+  .photo-strip{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .photo-thumb{position:relative;width:60px;height:60px}
+  .photo-thumb img{width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+  .photo-thumb-remove{position:absolute;top:-5px;right:-5px;background:var(--terra);color:white;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+  .photo-add-btn{width:60px;height:60px;border-radius:6px;border:2px dashed var(--border);background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--ink3);position:relative;flex-shrink:0}
+  .photo-add-btn:hover{border-color:var(--green2);background:var(--green3)}
+  .photo-add-btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .photo-add-label{font-size:8px;color:var(--ink3);margin-top:2px;letter-spacing:.05em}
   /* exercise */
   .ex-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
   .ex-card{background:white;border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:all .2s;text-align:center}
@@ -488,11 +493,9 @@ const STYLE=`
   .sk-check{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:white;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;cursor:pointer;transition:all .2s}
   .sk-check.done{background:var(--rose);border-color:var(--rose);color:white}
   .sk-name{font-size:12px;color:var(--ink);flex:1}
-  /* injection log */
   .inj-item{background:white;border:1px solid var(--border);border-radius:8px;padding:10px 13px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between}
   .inj-name{font-size:12px;color:var(--ink)}
   .inj-detail{font-size:10px;color:var(--ink3);margin-top:2px}
-  /* photo zone */
   .photo-zone{border:2px dashed var(--border);border-radius:12px;padding:18px;text-align:center;cursor:pointer;background:white;position:relative;transition:all .2s}
   .photo-zone:hover{border-color:var(--green2);background:var(--green3)}
   .photo-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -504,13 +507,10 @@ const STYLE=`
   .verdict-badge{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:500;margin-bottom:7px;display:flex;align-items:center;gap:7px}
   .verdict-badge.yes{color:var(--green2)}.verdict-badge.no{color:var(--terra)}.verdict-badge.caution{color:#946200}
   .verdict-body{font-size:12px;line-height:1.7;color:var(--ink)}
-  /* medical */
   .med-card{background:white;border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:10px}
   .med-card-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
   .med-text{font-size:11px;color:var(--ink2);line-height:1.7;white-space:pre-wrap}
-  /* pantry */
   .pantry-item{background:white;border:1px solid var(--border);border-radius:8px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
-  /* profile */
   .profile-section{margin-bottom:20px}
   .profile-section-title{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:5px}
   .target-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -520,7 +520,6 @@ const STYLE=`
   .restriction-tag{background:var(--terra2);color:var(--terra);font-size:11px;padding:7px 12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
   .condition-tag{background:var(--green3);color:var(--green);font-size:11px;padding:7px 12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
   .remove-tag{background:none;border:none;cursor:pointer;font-size:15px;opacity:.5}
-  /* chat */
   .chat-window{height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:11px;padding:13px;background:white;border:1px solid var(--border);border-radius:12px 12px 0 0}
   .chat-window::-webkit-scrollbar{width:3px}
   .chat-window::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
@@ -557,6 +556,8 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const[parseResult,setParseResult]=useState(null);
   const[meal,setMeal]=useState("breakfast");
   const[coachTip,setCoachTip]=useState(null);
+  // FIX #1 & #3: Staged photos for combined entry
+  const[stagedPhotos,setStagedPhotos]=useState([]);
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -569,13 +570,23 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
 
   function toggleTaken(id){const u={...takenToday,[id]:!takenToday[id]};setTakenToday(u);store.set("taken-"+todayKey(),u);}
 
-  async function handleAddFood(input){
-    const domVal = document.querySelector('.add-food-input')?.value || "";
-    const text=input||foodInput||domVal;
-    if(!text.trim())return;
-    if(text!==foodInput) setFoodInput(text);
+  async function stagePhotos(files){
+    const newPhotos=await Promise.all(Array.from(files).map(async f=>({
+      b64:await fileToBase64(f),
+      mediaType:f.type||"image/jpeg",
+      preview:URL.createObjectURL(f)
+    })));
+    setStagedPhotos(p=>[...p,...newPhotos]);
+  }
+
+  function removePhoto(idx){setStagedPhotos(p=>p.filter((_,i)=>i!==idx));}
+
+  async function handleAddFood(){
+    const text=foodInput.trim();
+    if(!text && stagedPhotos.length===0) return;
     setParsing(true);setParseResult(null);setCoachTip(null);
-    const result=await parseFood(text);
+    // FIX #3: Combined photo + text
+    const result=await parseFoodCombined(text, stagedPhotos);
     if(!result||result.error){
       setParseResult({error: result?.error || "API call failed — tap Add to retry"});
       setParsing(false);
@@ -583,33 +594,28 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     }
     if(result&&result.name){
       const mealLabel={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"}[meal]||"";
-      const entry={id:Date.now(),name:result.name||text,meal,mealLabel,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},oxalate:result.oxalate||guessOxalate(text),notes:result.notes};
+      const entry={id:Date.now(),name:result.name||text||"Food",meal,mealLabel,
+        time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+        nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},
+        oxalate:result.oxalate||"low",notes:result.notes};
       const u=[...foodLog,entry];
-      setFoodLog(u);store.set("food-log-"+todayKey(),u);setParseResult(result);setFoodInput("");
-      // Get coach tip asynchronously after logging
+      setFoodLog(u);store.set("food-log-"+todayKey(),u);
+      setParseResult(result);
+      setFoodInput("");
+      setStagedPhotos([]); // FIX: clear staged photos after logging
       const newTotals=computeTotals(u);
       getCoachTip(result.name,newTotals,profile.targets,proteinTarget).then(tip=>{if(tip)setCoachTip(tip);});
     }
     setParsing(false);
   }
 
-  async function handlePhotoFood(file){
-    if(!file)return;
-    setParsing(true);setParseResult(null);setCoachTip(null);
-    const b64=await fileToBase64(file);
-    const result=await parseFoodFromImage(b64,file.type||"image/jpeg");
-    if(result){
-      const mealLabel={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"}[meal]||"";
-      const entry={id:Date.now(),name:result.name||"Food from photo",meal,mealLabel,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},oxalate:result.oxalate||"low",notes:result.notes};
-      const u=[...foodLog,entry];
-      setFoodLog(u);store.set("food-log-"+todayKey(),u);setParseResult(result);
-      const newTotals=computeTotals(u);
-      getCoachTip(result.name,newTotals,profile.targets,proteinTarget).then(tip=>{if(tip)setCoachTip(tip);});
-    }
-    setParsing(false);
+  // FIX #2: Clear coachTip when removing last food item
+  function removeFood(id){
+    const u=foodLog.filter(f=>f.id!==id);
+    setFoodLog(u);
+    store.set("food-log-"+todayKey(),u);
+    if(u.length===0) setCoachTip(null);
   }
-
-  function removeFood(id){const u=foodLog.filter(f=>f.id!==id);setFoodLog(u);store.set("food-log-"+todayKey(),u);}
 
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
@@ -626,16 +632,14 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         <div style={{textAlign:"right"}}><div className="ribbon-label">Protein</div><div className="ribbon-val">{totals.protein}<span style={{fontSize:13,opacity:.7}}>g / {proteinTarget}g</span></div></div>
       </div>
 
-      {/* Status pills */}
       <div className="status-strip">
         {progToday
           ?<div className="status-pill prog">🌙 Progesterone day</div>
           :daysUntil!==null?<div className="status-pill prog-off">🌙 Progesterone in {daysUntil}d</div>:null}
         {todayActivity&&<div className="status-pill ex">💪 {todayActivity}</div>}
-        <div className="status-pill protein">🥩 Protein target: {proteinTarget}g</div>
+        <div className="status-pill protein">🐟 Protein target: {proteinTarget}g</div>
       </div>
 
-      {/* Water */}
       <div className="water-track">
         <div style={{minWidth:60}}><div className="water-label">Water</div><div className="water-count">{water}<span style={{fontSize:12,color:"var(--green2)"}}> / {targets.water_glasses}</span></div></div>
         <div className="water-glasses">
@@ -649,7 +653,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         </div>
       </div>
 
-      {/* Supplements */}
       <div className="cat-label">Supplements — tap when taken</div>
       {supps.map(item=>{
         const taken=!!takenToday[item.id];
@@ -683,7 +686,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         );
       })}
 
-      {/* Medications */}
       <div className="cat-label">Medications <span className="cat-badge">as needed</span></div>
       {meds.map(item=>{
         const taken=!!takenToday[item.id];
@@ -699,7 +701,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         );
       })}
 
-      {/* Nutrients */}
       <div className="nutrient-grid" style={{marginTop:16}}>
         {[
           {key:"sodium",label:"Sodium",val:totals.sodium,max:targets.sodium_mg,unit:"mg",isMax:true,note:"≤"+targets.sodium_mg+"mg"},
@@ -716,7 +717,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         ))}
       </div>
 
-      {/* Food log */}
       <p className="section-title" style={{marginTop:18}}>Today's food</p>
       {foodLog.length===0?(<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>):(
         <div className="food-log">
@@ -741,15 +741,15 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         </div>
       )}
 
-      {/* Coach tip */}
-      {coachTip&&(
+      {/* FIX #2: Only show coachTip if there's food logged */}
+      {coachTip && foodLog.length>0 &&(
         <div style={{background:"var(--green3)",border:"1px solid var(--green2)",borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:11,color:"var(--green)",lineHeight:1.6}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green2)",marginBottom:4}}>Coach tip</div>
           {coachTip}
         </div>
       )}
 
-      {/* Add food */}
+      {/* ADD FOOD — FIX #1 #3: Multi-photo + combined */}
       <div className="add-food-area">
         <div className="add-food-title">Add food</div>
         <div style={{display:"flex",gap:6,marginBottom:8}}>
@@ -759,28 +759,45 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
             </button>
           ))}
         </div>
+
+        {/* FIX #1 #3: Photo strip — add multiple, preview, remove */}
+        <div className="photo-strip">
+          {stagedPhotos.map((p,i)=>(
+            <div className="photo-thumb" key={i}>
+              <img src={p.preview} alt=""/>
+              <button className="photo-thumb-remove" onClick={()=>removePhoto(i)}>×</button>
+            </div>
+          ))}
+          <div className="photo-add-btn">
+            <span>📷</span>
+            <span className="photo-add-label">Add photo</span>
+            <input type="file" accept="image/*" multiple onChange={e=>{stagePhotos(e.target.files);e.target.value="";}} disabled={parsing}/>
+          </div>
+        </div>
+
         <div className="input-row">
-          <input className="text-input add-food-input" style={{flex:1}} placeholder="Describe what you ate…"
-            value={foodInput} 
+          <input className="text-input add-food-input" style={{flex:1}}
+            placeholder={stagedPhotos.length>0?"Describe portions or add detail…":"Describe what you ate…"}
+            value={foodInput}
             onChange={e=>setFoodInput(e.target.value)}
-            onInput={e=>setFoodInput(e.target.value)}
             onCompositionEnd={e=>setFoodInput(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&handleAddFood()}/>
           <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>
             {listening?"🔴":"🎤"}
           </button>
-          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16}}>
-            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>handlePhotoFood(e.target.files[0])} disabled={parsing}/>
-          </label>
-          <button className="btn btn-primary" onClick={()=>{const v=document.querySelector('.add-food-input')?.value||foodInput;if(v.trim())setFoodInput(v);handleAddFood(v);}} disabled={parsing}>
+          <button className="btn btn-primary" onClick={handleAddFood} disabled={parsing||(!foodInput.trim()&&stagedPhotos.length===0)}>
             {parsing?<span className="loading-spin"/>:"Add"}
           </button>
         </div>
-        <div className="add-note">Type, speak 🎤, or photograph 📷 your food.</div>
-        
+        <div className="add-note">
+          {stagedPhotos.length>0
+            ?`${stagedPhotos.length} photo${stagedPhotos.length>1?"s":""} staged — add text if needed, then tap Add`
+            :"Type 🎤 speak, or 📷 add photos (multiple ok), then tap Add"}
+        </div>
+
         {parseResult&&parseResult.error&&(
           <div style={{background:"var(--terra2)",border:"1px solid var(--terra)",borderRadius:8,padding:"9px 12px",marginTop:7,fontSize:11,color:"var(--terra)"}}>
-            ⚠️ {parseResult.error} — please tap Add to try again
+            ⚠️ {parseResult.error}
           </div>
         )}
         {parseResult&&!parseResult.error&&(
@@ -794,13 +811,18 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   );
 }
 
-// ─── EXERCISE TAB ─────────────────────────────────────────────────────────────
+// ─── EXERCISE TAB — FIX #7: Walking distance ─────────────────────────────────
 function ExerciseTab({exLogs,setExLogs}){
   const[customDur,setCustomDur]=useState({});
+  const[distance,setDistance]=useState({});
+  const[distUnit,setDistUnit]=useState({});
 
   function logActivity(act){
     const dur=customDur[act.id]||act.duration;
-    const entry={id:Date.now(),activityId:act.id,duration:dur,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})};
+    const dist=distance[act.id]||"";
+    const unit=distUnit[act.id]||"blocks";
+    const entry={id:Date.now(),activityId:act.id,duration:dur,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+      ...(act.hasDistance&&dist?{distance:dist,distanceUnit:unit}:{})};
     const u=[...exLogs,entry];setExLogs(u);store.set("ex-"+todayKey(),u);
   }
   function removeEx(id){const u=exLogs.filter(e=>e.id!==id);setExLogs(u);store.set("ex-"+todayKey(),u);}
@@ -811,7 +833,6 @@ function ExerciseTab({exLogs,setExLogs}){
   return(
     <div className="section">
       <p className="section-title">Exercise</p>
-
       {exLogs.length>0&&(
         <div className="day-ribbon" style={{marginBottom:14}}>
           <div><div className="ribbon-label">Protein target today</div><div className="ribbon-val">{proteinTarget}g</div></div>
@@ -819,7 +840,6 @@ function ExerciseTab({exLogs,setExLogs}){
           <div style={{textAlign:"right"}}><div className="ribbon-label">Sessions</div><div className="ribbon-val">{exLogs.length}</div></div>
         </div>
       )}
-
       {exLogs.length>0&&(
         <div style={{marginBottom:14}}>
           <div className="cat-label">Today's sessions</div>
@@ -831,7 +851,11 @@ function ExerciseTab({exLogs,setExLogs}){
                 <span style={{fontSize:20}}>{act.emoji}</span>
                 <div style={{flex:1}}>
                   <div style={{fontSize:12,color:"var(--ink)"}}>{act.name}</div>
-                  <div style={{fontSize:10,color:"var(--ink3)"}}>{e.time} · {e.duration}min · {act.cal} cal · protein target {act.protein}g</div>
+                  <div style={{fontSize:10,color:"var(--ink3)"}}>
+                    {e.time} · {e.duration}min
+                    {e.distance&&` · ${e.distance} ${e.distanceUnit}`}
+                    {` · ${act.cal} cal · protein target ${act.protein}g`}
+                  </div>
                   {act.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic"}}>{act.notes}</div>}
                 </div>
                 <button className="food-delete" onClick={()=>removeEx(e.id)}>×</button>
@@ -840,7 +864,6 @@ function ExerciseTab({exLogs,setExLogs}){
           })}
         </div>
       )}
-
       <div className="cat-label">Log a session</div>
       <div className="ex-grid">
         {ACTIVITIES.map(act=>{
@@ -850,11 +873,27 @@ function ExerciseTab({exLogs,setExLogs}){
               <div className="ex-emoji">{act.emoji}</div>
               <div className="ex-name">{act.name}</div>
               <div className="ex-detail">{act.duration}min · {act.cal>0?act.cal+"cal":"recovery"}</div>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,justifyContent:"center"}}>
-                <input type="number" className="text-input" style={{width:54,padding:"4px 6px",fontSize:11,textAlign:"center"}}
-                  placeholder={act.duration} value={customDur[act.id]||""} onChange={e=>setCustomDur({...customDur,[act.id]:Number(e.target.value)||act.duration})}/>
+              <div style={{display:"flex",alignItems:"center",gap:4,marginTop:8,justifyContent:"center"}}>
+                <input type="number" className="text-input" style={{width:46,padding:"4px 5px",fontSize:11,textAlign:"center"}}
+                  placeholder={act.duration} value={customDur[act.id]||""}
+                  onChange={e=>setCustomDur({...customDur,[act.id]:Number(e.target.value)||act.duration})}/>
                 <span style={{fontSize:9,color:"var(--ink3)"}}>min</span>
               </div>
+              {/* FIX #7: Distance input for walking */}
+              {act.hasDistance&&(
+                <div style={{display:"flex",alignItems:"center",gap:4,marginTop:6,justifyContent:"center"}}>
+                  <input type="number" className="text-input" style={{width:46,padding:"4px 5px",fontSize:11,textAlign:"center"}}
+                    placeholder="dist" value={distance[act.id]||""}
+                    onChange={e=>setDistance({...distance,[act.id]:e.target.value})}/>
+                  <select className="text-input" style={{padding:"4px 3px",fontSize:9,width:54}}
+                    value={distUnit[act.id]||"blocks"}
+                    onChange={e=>setDistUnit({...distUnit,[act.id]:e.target.value})}>
+                    <option value="blocks">blocks</option>
+                    <option value="km">km</option>
+                    <option value="miles">miles</option>
+                  </select>
+                </div>
+              )}
               <button className="btn btn-primary btn-sm" style={{marginTop:8,width:"100%"}} onClick={()=>logActivity(act)}>
                 {alreadyLogged?"Log again":"Log"}
               </button>
@@ -871,19 +910,12 @@ function SkincareTab({skChecks,setSkChecks}){
   const dow=new Date().getDay();
   const dayNames=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   const eveningItems=SK_EVENING[dow];
-
-  function toggle(section,idx){
-    const key=`${section}-${idx}`;
-    const u={...skChecks,[todayKey()+"_"+key]:!skChecks[todayKey()+"_"+key]};
-    setSkChecks(u);store.set("sk-checks",u);
-  }
+  function toggle(section,idx){const key=`${section}-${idx}`;const u={...skChecks,[todayKey()+"_"+key]:!skChecks[todayKey()+"_"+key]};setSkChecks(u);store.set("sk-checks",u);}
   function isDone(section,idx){return!!skChecks[todayKey()+"_"+`${section}-${idx}`];}
-
   return(
     <div className="section">
       <p className="section-title">Skincare</p>
       <p style={{fontSize:10,color:"var(--ink3)",marginBottom:16,letterSpacing:".05em"}}>{dayNames[dow]}'s routine</p>
-
       <div className="sk-section">
         <div className="sk-title">☀️ Morning — every day</div>
         {SK_MORNING.map((item,i)=>(
@@ -893,7 +925,6 @@ function SkincareTab({skChecks,setSkChecks}){
           </div>
         ))}
       </div>
-
       <div className="sk-section">
         <div className="sk-title">🌙 Evening — {dayNames[dow]}</div>
         {eveningItems.map((item,i)=>(
@@ -903,7 +934,6 @@ function SkincareTab({skChecks,setSkChecks}){
           </div>
         ))}
       </div>
-
       <div className="sk-section">
         <div className="sk-title">🤲 Hands — every night</div>
         {SK_HANDS.map((item,i)=>(
@@ -913,168 +943,97 @@ function SkincareTab({skChecks,setSkChecks}){
           </div>
         ))}
       </div>
-
       <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,padding:13,fontSize:11,color:"var(--ink3)",lineHeight:1.7}}>
         <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>Weekly overview</div>
         {["Sun — Lactic acid","Mon — Rest","Tue — Salicylic acid","Wed — Rest","Thu — Retinol","Fri — Salicylic acid","Sat — Retinol"].map((d,i)=>(
-          <div key={i} style={{padding:"3px 0",color:i===dow?"var(--green)":"var(--ink3)",fontWeight:i===dow?"500":"normal"}}>
-            {i===dow?"→ ":""}{d}
-          </div>
+          <div key={i} style={{padding:"3px 0",color:i===dow?"var(--green)":"var(--ink3)",fontWeight:i===dow?"500":"normal"}}>{i===dow?"→ ":""}{d}</div>
         ))}
       </div>
     </div>
   );
 }
 
-// ─── INJECTIONS TAB ───────────────────────────────────────────────────────────
+// ─── PROCEDURES TAB ───────────────────────────────────────────────────────────
 function InjectionsTab({injections,setInjections}){
-  const[name,setName]=useState("");
-  const[area,setArea]=useState("");
-  const[date,setDate]=useState(todayKey());
-  const[notes,setNotes]=useState("");
-
+  const[name,setName]=useState("");const[area,setArea]=useState("");const[date,setDate]=useState(todayKey());const[notes,setNotes]=useState("");
   const COMMON=["Botox","Hyaluronic acid filler","PRP","Lip filler","Cheek filler","Skinbooster","Dentist cleaning","Colonoscopy","Blood test","Eye exam","Mammogram","Facial","Massage","Physiotherapy","Surgery","Vaccination","Other"];
-
-  function addInjection(){
-    if(!name.trim())return;
-    const entry={id:Date.now(),name:name.trim(),area:area.trim(),date,notes:notes.trim()};
-    const u=[...injections,entry];setInjections(u);store.set("injections",u);
-    setName("");setArea("");setNotes("");setDate(todayKey());
-  }
+  function addInjection(){if(!name.trim())return;const entry={id:Date.now(),name:name.trim(),area:area.trim(),date,notes:notes.trim()};const u=[...injections,entry];setInjections(u);store.set("injections",u);setName("");setArea("");setNotes("");setDate(todayKey());}
   function removeInj(id){const u=injections.filter(i=>i.id!==id);setInjections(u);store.set("injections",u);}
-
-  function daysSince(dateStr){
-    const diff=Math.floor((new Date()-new Date(dateStr+"T12:00:00"))/86400000);
-    if(diff===0)return"Today";if(diff===1)return"Yesterday";return`${diff} days ago`;
-  }
-
+  function daysSince(dateStr){const diff=Math.floor((new Date()-new Date(dateStr+"T12:00:00"))/86400000);if(diff===0)return"Today";if(diff===1)return"Yesterday";return`${diff} days ago`;}
   return(
     <div className="section">
       <p className="section-title">Procedures & Appointments</p>
-
       <div className="add-food-area" style={{marginBottom:16}}>
         <div className="add-food-title">Log a procedure</div>
-        <div className="quick-prompts" style={{marginBottom:10}}>
-          {COMMON.map((c,i)=><button key={i} className="quick-btn" onClick={()=>setName(c)}>{c}</button>)}
-        </div>
-        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
+        <div className="quick-prompts" style={{marginBottom:10}}>{COMMON.map((c,i)=><button key={i} className="quick-btn" onClick={()=>setName(c)}>{c}</button>)}</div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
           <input className="text-input" style={{flex:2}} placeholder="Procedure name" value={name} onChange={e=>setName(e.target.value)}/>
           <input className="text-input" style={{flex:1}} placeholder="Area (e.g. lips)" value={area} onChange={e=>setArea(e.target.value)}/>
         </div>
-        <div className="form-row" style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:7}}>
           <input className="text-input" type="date" value={date} onChange={e=>setDate(e.target.value)} style={{flex:1}}/>
           <input className="text-input" style={{flex:2}} placeholder="Notes (clinic, units, etc.)" value={notes} onChange={e=>setNotes(e.target.value)}/>
         </div>
         <button className="btn btn-primary" style={{width:"100%"}} onClick={addInjection} disabled={!name.trim()}>Log procedure</button>
       </div>
-
-      {injections.length===0?(
-        <div className="empty-state"><div className="empty-icon">💉</div><div>No procedures logged yet</div></div>
-      ):(
-        [...injections].sort((a,b)=>b.date.localeCompare(a.date)).map(inj=>(
-          <div className="inj-item" key={inj.id}>
-            <div style={{flex:1}}>
-              <div className="inj-name">{inj.name}{inj.area&&<span style={{color:"var(--ink3)",fontWeight:"normal"}}> — {inj.area}</span>}</div>
-              <div className="inj-detail">{daysSince(inj.date)} · {inj.date}</div>
-              {inj.notes&&<div className="inj-detail" style={{fontStyle:"italic"}}>{inj.notes}</div>}
-            </div>
-            <button className="food-delete" onClick={()=>removeInj(inj.id)}>×</button>
+      {injections.length===0?(<div className="empty-state"><div className="empty-icon">💉</div><div>No procedures logged yet</div></div>)
+      :[...injections].sort((a,b)=>b.date.localeCompare(a.date)).map(inj=>(
+        <div className="inj-item" key={inj.id}>
+          <div style={{flex:1}}>
+            <div className="inj-name">{inj.name}{inj.area&&<span style={{color:"var(--ink3)",fontWeight:"normal"}}> — {inj.area}</span>}</div>
+            <div className="inj-detail">{daysSince(inj.date)} · {inj.date}</div>
+            {inj.notes&&<div className="inj-detail" style={{fontStyle:"italic"}}>{inj.notes}</div>}
           </div>
-        ))
-      )}
+          <button className="food-delete" onClick={()=>removeInj(inj.id)}>×</button>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ─── MEDS TAB ────────────────────────────────────────────────────────────────
 function MedsTab({master,setMaster}){
-  const[showAdd,setShowAdd]=useState(false);
-  const[scanning,setScanning]=useState(false);
-  const[scanPreview,setScanPreview]=useState(null);
-  const[scanResult,setScanResult]=useState(null);
+  const[showAdd,setShowAdd]=useState(false);const[scanning,setScanning]=useState(false);const[scanPreview,setScanPreview]=useState(null);const[scanResult,setScanResult]=useState(null);
   const[newItem,setNewItem]=useState({name:"",dose:"",category:"supplement",time:"morning",notes:""});
 
   async function handlePhotoScan(file){
-    if(!file)return;
-    setScanPreview(URL.createObjectURL(file));setScanResult(null);setScanning(true);
+    if(!file)return;setScanPreview(URL.createObjectURL(file));setScanResult(null);setScanning(true);
     const b64=await fileToBase64(file);
     const sys=`Read supplement/medication label. Return ONLY valid JSON:
 {"name":"full name","dose":"dose per serving","time":"morning"|"night"|"with meals"|"as needed","category":"supplement"|"medication","key_nutrients":{},"synergies":[],"notes":"relevant note"}`;
     const raw=await callClaudeWithImage(b64,file.type||"image/jpeg","Read this label.",sys);
-    try{
-      const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
-      setScanResult(parsed);
-      setNewItem({name:parsed.name||"",dose:parsed.dose||"",category:parsed.category||"supplement",time:parsed.time||"morning",notes:parsed.notes||""});
-    }catch{
-      setScanResult({notes:"Could not read label — fill in manually."});
-    }
+    try{const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());setScanResult(parsed);setNewItem({name:parsed.name||"",dose:parsed.dose||"",category:parsed.category||"supplement",time:parsed.time||"morning",notes:parsed.notes||""});}
+    catch{setScanResult({notes:"Could not read label — fill in manually."});}
     setScanning(false);
   }
 
-  function addItem(){
-    if(!newItem.name.trim())return;
-    const item={id:"custom-"+Date.now(),name:newItem.name.trim(),dose:newItem.dose.trim(),category:newItem.category,time:newItem.time,notes:newItem.notes.trim(),paused:false,synergies:[]};
-    const u=[...master,item];setMaster(u);store.set("master",u);
-    setNewItem({name:"",dose:"",category:"supplement",time:"morning",notes:""});
-    setShowAdd(false);setScanPreview(null);setScanResult(null);
-  }
-
+  function addItem(){if(!newItem.name.trim())return;const item={id:"custom-"+Date.now(),name:newItem.name.trim(),dose:newItem.dose.trim(),category:newItem.category,time:newItem.time,notes:newItem.notes.trim(),paused:false,synergies:[]};const u=[...master,item];setMaster(u);store.set("master",u);setNewItem({name:"",dose:"",category:"supplement",time:"morning",notes:""});setShowAdd(false);setScanPreview(null);setScanResult(null);}
   function removeItem(id){const u=master.filter(m=>m.id!==id);setMaster(u);store.set("master",u);}
   function togglePaused(id){const u=master.map(m=>m.id===id?{...m,paused:!m.paused}:m);setMaster(u);store.set("master",u);}
 
   const supps=master.filter(m=>m.category==="supplement");
   const meds=master.filter(m=>m.category==="medication");
-
   return(
     <div className="section">
       <p className="section-title">Supplements & Medications</p>
-      <button className="btn btn-primary" style={{width:"100%",marginBottom:14}} onClick={()=>setShowAdd(!showAdd)}>
-        {showAdd?"— Cancel":"+ Add New"}
-      </button>
-
+      <button className="btn btn-primary" style={{width:"100%",marginBottom:14}} onClick={()=>setShowAdd(!showAdd)}>{showAdd?"— Cancel":"+ Add New"}</button>
       {showAdd&&(
         <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:10}}>Add by photo (optional)</div>
-          {!scanPreview?(
-            <div className="photo-zone" style={{marginBottom:12}}>
-              <input type="file" accept="image/*" onChange={e=>handlePhotoScan(e.target.files[0])}/>
-              <div style={{fontSize:24,marginBottom:5}}>📸</div>
-              <div style={{fontSize:11,color:"var(--ink3)"}}>Photograph label — Claude pre-fills the form</div>
-            </div>
-          ):(
-            <div style={{marginBottom:10}}>
-              <img src={scanPreview} alt="" className="photo-preview" style={{marginBottom:6}}/>
-              {scanning&&<div style={{textAlign:"center",padding:10,fontSize:11,color:"var(--ink3)"}}><span className="loading-spin" style={{borderTopColor:"var(--green)"}}/> Reading…</div>}
-              {scanResult?.notes&&<div style={{fontSize:11,color:"var(--terra)",margin:"6px 0",fontStyle:"italic"}}>{scanResult.notes}</div>}
-            </div>
-          )}
+          {!scanPreview?(<div className="photo-zone" style={{marginBottom:12}}><input type="file" accept="image/*" onChange={e=>handlePhotoScan(e.target.files[0])}/><div style={{fontSize:24,marginBottom:5}}>📸</div><div style={{fontSize:11,color:"var(--ink3)"}}>Photograph label — Claude pre-fills the form</div></div>)
+          :(<div style={{marginBottom:10}}><img src={scanPreview} alt="" className="photo-preview" style={{marginBottom:6}}/>{scanning&&<div style={{textAlign:"center",padding:10,fontSize:11,color:"var(--ink3)"}}><span className="loading-spin" style={{borderTopColor:"var(--green)"}}/> Reading…</div>}{scanResult?.notes&&<div style={{fontSize:11,color:"var(--terra)",margin:"6px 0",fontStyle:"italic"}}>{scanResult.notes}</div>}</div>)}
           <div style={{display:"flex",gap:7,marginBottom:7,flexWrap:"wrap"}}>
-            <div style={{flex:2}}>
-              <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:3}}>Name *</div>
-              <input className="text-input" style={{width:"100%"}} placeholder="e.g. Vitamin C" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})}/>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:3}}>Dose</div>
-              <input className="text-input" style={{width:"100%"}} placeholder="500mg" value={newItem.dose} onChange={e=>setNewItem({...newItem,dose:e.target.value})}/>
-            </div>
+            <div style={{flex:2}}><div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:3}}>Name *</div><input className="text-input" style={{width:"100%"}} placeholder="e.g. Vitamin C" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})}/></div>
+            <div style={{flex:1}}><div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:3}}>Dose</div><input className="text-input" style={{width:"100%"}} placeholder="500mg" value={newItem.dose} onChange={e=>setNewItem({...newItem,dose:e.target.value})}/></div>
           </div>
           <div style={{display:"flex",gap:7,marginBottom:7}}>
-            <select className="text-input" style={{flex:1}} value={newItem.category} onChange={e=>setNewItem({...newItem,category:e.target.value})}>
-              <option value="supplement">Supplement</option>
-              <option value="medication">Medication</option>
-            </select>
-            <select className="text-input" style={{flex:1}} value={newItem.time} onChange={e=>setNewItem({...newItem,time:e.target.value})}>
-              <option value="morning">Morning</option>
-              <option value="with meals">With meals</option>
-              <option value="night">Night</option>
-              <option value="as needed">As needed</option>
-            </select>
+            <select className="text-input" style={{flex:1}} value={newItem.category} onChange={e=>setNewItem({...newItem,category:e.target.value})}><option value="supplement">Supplement</option><option value="medication">Medication</option></select>
+            <select className="text-input" style={{flex:1}} value={newItem.time} onChange={e=>setNewItem({...newItem,time:e.target.value})}><option value="morning">Morning</option><option value="with meals">With meals</option><option value="night">Night</option><option value="as needed">As needed</option></select>
           </div>
           <input className="text-input" style={{width:"100%",marginBottom:8}} placeholder="Notes (optional)" value={newItem.notes} onChange={e=>setNewItem({...newItem,notes:e.target.value})}/>
           <button className="btn btn-primary" style={{width:"100%"}} onClick={addItem} disabled={!newItem.name.trim()}>Add to my list</button>
         </div>
       )}
-
       <div className="cat-label">Supplements ({supps.length})</div>
       {supps.map(item=>(
         <div key={item.id} className="master-item" style={{opacity:item.paused?.5:1}}>
@@ -1092,7 +1051,6 @@ function MedsTab({master,setMaster}){
           </div>
         </div>
       ))}
-
       <div className="cat-label" style={{marginTop:16}}>Medications ({meds.length}) <span className="cat-badge">as needed</span></div>
       {meds.map(item=>(
         <div key={item.id} className="master-item medication">
@@ -1110,82 +1068,117 @@ function MedsTab({master,setMaster}){
   );
 }
 
-// ─── SCAN TAB ────────────────────────────────────────────────────────────────
-function ScanTab({profile,onSave}){
+// ─── SCAN TAB — FIX #8 #9: multi-photo, skin destination, destination selector ─
+function ScanTab({profile,onSave,skinProducts,setSkinProducts}){
   const[scanning,setScanning]=useState(false);
-  const[preview,setPreview]=useState(null);
+  const[previews,setPreviews]=useState([]);
+  const[stagedImgs,setStagedImgs]=useState([]);
   const[result,setResult]=useState(null);
   const[question,setQuestion]=useState("");
+  // FIX #9: destination selector before scanning
+  const[destination,setDestination]=useState("pantry");
 
-  async function scanProduct(file){
-    if(!file)return;
-    setPreview(URL.createObjectURL(file));setResult(null);setScanning(true);
-    const b64=await fileToBase64(file);
+  async function stageScanPhotos(files){
+    const newImgs=await Promise.all(Array.from(files).map(async f=>({
+      b64:await fileToBase64(f),mediaType:f.type||"image/jpeg",preview:URL.createObjectURL(f)
+    })));
+    setStagedImgs(p=>[...p,...newImgs]);
+    setPreviews(p=>[...p,...newImgs.map(i=>i.preview)]);
+  }
+
+  function removeStagedImg(idx){
+    setStagedImgs(p=>p.filter((_,i)=>i!==idx));
+    setPreviews(p=>p.filter((_,i)=>i!==idx));
+  }
+
+  async function runScan(){
+    if(stagedImgs.length===0)return;
+    setResult(null);setScanning(true);
     const sys=`You are Sofia's nutrition coach analyzing a product.
-SOFIA: Kidney stones (bilateral), HRT, sodium ≤1500mg/day, low oxalate, calcium ~1000mg/day with meals.
+SOFIA: Kidney stones (bilateral), HRT, sodium ≤1500mg/day, low oxalate, calcium ~1000mg/day with meals. Pescatarian (no meat).
 Return ONLY valid JSON:
 {"product_name":"...","verdict":"yes"|"caution"|"no","verdict_emoji":"✅"|"⚠️"|"🚫","headline":"punchy summary","key_nutrients":{"sodium":"Xmg"},"reasoning":"2-3 sentences specific to Sofia","watch_out":"concern or null","better_alternative":"alternative or null","serving_advice":"advice or null"}`;
-    const prompt=question?`Sofia asks: "${question}"\n\nAnalyze this.`:"Analyze this product label for me.";
-    const raw=await callClaudeWithImage(b64,file.type||"image/jpeg",prompt,sys);
+    const prompt=question?`Sofia asks: "${question}"\n\nAnalyze this product. If multiple photos, use all of them together (e.g. front + label).`
+      :"Analyze this product label for me. If multiple photos, use all together.";
+    const raw=await callClaudeWithImages(stagedImgs,prompt,sys);
     try{setResult(JSON.parse(raw.replace(/```json|```/g,"").trim()));}
     catch{setResult({product_name:"Product",verdict:"caution",verdict_emoji:"⚠️",headline:"Could not read label clearly",reasoning:raw.slice(0,250),watch_out:null,better_alternative:null,serving_advice:null,key_nutrients:{}});}
     setScanning(false);
   }
 
-  function reset(){setPreview(null);setResult(null);setQuestion("");}
+  function reset(){setPreviews([]);setStagedImgs([]);setResult(null);setQuestion("");}
+
+  // FIX #8: Save to skin
+  function handleSave(){
+    if(onSave)onSave(result,destination);
+    alert(`Saved to ${destination}!`);
+  }
 
   return(
     <div className="section">
       <p className="section-title">Scanner</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Photograph any product for an instant verdict — food, skincare, supplements.</p>
-      {!preview?(
-        <>
-          <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
-            value={question} onChange={e=>setQuestion(e.target.value)}/>
-          <div className="photo-zone">
-            <input type="file" accept="image/*" multiple onChange={function(e){if(e.target.files[0])scanProduct(e.target.files[0]);}}/>
-            <div style={{fontSize:26,marginBottom:5}}>📷</div>
-            <div style={{fontSize:11,color:"var(--ink3)",lineHeight:1.5}}><strong style={{color:"var(--green)",display:"block",marginBottom:3}}>Photograph any label</strong>Food, skincare, or supplement — Claude checks against your health profile.</div>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>Photograph any product — food, skincare, supplements. Add multiple photos (front + label).</p>
+
+      {/* FIX #9: Destination selector BEFORE scanning */}
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Save result to:</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {[["pantry","🥫 Pantry"],["skin","✨ Skin"],["meds","💊 Meds"],["medical","🏥 Medical"]].map(([val,label])=>(
+            <button key={val} onClick={()=>setDestination(val)} style={{padding:"6px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"'DM Mono',monospace",background:destination===val?"var(--green)":"white",color:destination===val?"white":"var(--ink3)",borderColor:destination===val?"var(--green)":"var(--border)"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
+        value={question} onChange={e=>setQuestion(e.target.value)}/>
+
+      {/* FIX #1 #8: Multi-photo staging for scan */}
+      <div className="photo-strip" style={{marginBottom:10}}>
+        {stagedImgs.map((img,i)=>(
+          <div className="photo-thumb" key={i}>
+            <img src={img.preview} alt=""/>
+            <button className="photo-thumb-remove" onClick={()=>removeStagedImg(i)}>×</button>
           </div>
-        </>
-      ):(
+        ))}
+        <div className="photo-add-btn">
+          <span>📷</span>
+          <span className="photo-add-label">Add photo</span>
+          <input type="file" accept="image/*" multiple onChange={e=>{stageScanPhotos(e.target.files);e.target.value="";}} disabled={scanning}/>
+        </div>
+      </div>
+
+      {stagedImgs.length>0&&!result&&(
+        <button className="btn btn-primary" style={{width:"100%",marginBottom:12}} onClick={runScan} disabled={scanning}>
+          {scanning?<><span className="loading-spin"/> Analyzing…</>:`Analyze ${stagedImgs.length} photo${stagedImgs.length>1?"s":""}`}
+        </button>
+      )}
+
+      {result&&(
         <div>
-          <img src={preview} alt="" className="photo-preview" style={{marginBottom:9}}/>
-          {scanning?(
-            <div style={{textAlign:"center",padding:16,fontSize:11,color:"var(--ink3)"}}><span className="loading-spin" style={{borderTopColor:"var(--green)"}}/> Analyzing…</div>
-          ):result&&(
-            <div>
-              <div className={`scan-verdict ${result.verdict}`}>
-                <div className={`verdict-badge ${result.verdict}`}>
-                  <span style={{fontSize:17}}>{result.verdict_emoji}</span>
-                  {result.verdict==="yes"?"Good for you":result.verdict==="caution"?"Use with caution":"Avoid this one"}
-                  {result.product_name&&<span style={{opacity:.6,fontWeight:"normal",fontSize:9}}> — {result.product_name}</span>}
-                </div>
-                {result.headline&&<div style={{fontSize:12,fontWeight:500,marginBottom:7}}>{result.headline}</div>}
-                {Object.keys(result.key_nutrients||{}).length>0&&(
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
-                    {Object.entries(result.key_nutrients).map(([k,v])=><span key={k} style={{background:"rgba(0,0,0,.06)",padding:"2px 8px",borderRadius:20,fontSize:10}}>{k}: {v}</span>)}
-                  </div>
-                )}
-                <div className="verdict-body">{result.reasoning}</div>
-                {result.watch_out&&<div style={{marginTop:7,padding:"6px 10px",background:"rgba(0,0,0,.05)",borderRadius:6,fontSize:11,color:"var(--terra)"}}>⚠ {result.watch_out}</div>}
-                {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
-                {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
-              </div>
-              <div style={{marginTop:11}}>
-                <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".08em",textTransform:"uppercase"}}>Save to:</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:9}}>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"pantry");}}>Pantry</button>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"medical");}}>Medical</button>
-                  <button className="btn btn-outline" style={{fontSize:11}} onClick={function(){if(onSave)onSave(result,"meds");}}>Meds</button>
-                </div>
-                <div style={{display:"flex",gap:7}}>
-                  <button className="btn btn-primary" onClick={reset}>Scan another</button>
-                  <button className="btn btn-outline" onClick={function(){setResult(null);}}>Re-analyze</button>
-                </div>
-              </div>
+          <div className={`scan-verdict ${result.verdict}`}>
+            <div className={`verdict-badge ${result.verdict}`}>
+              <span style={{fontSize:17}}>{result.verdict_emoji}</span>
+              {result.verdict==="yes"?"Good for you":result.verdict==="caution"?"Use with caution":"Avoid this one"}
+              {result.product_name&&<span style={{opacity:.6,fontWeight:"normal",fontSize:9}}> — {result.product_name}</span>}
             </div>
-          )}
+            {result.headline&&<div style={{fontSize:12,fontWeight:500,marginBottom:7}}>{result.headline}</div>}
+            {Object.keys(result.key_nutrients||{}).length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
+                {Object.entries(result.key_nutrients).map(([k,v])=><span key={k} style={{background:"rgba(0,0,0,.06)",padding:"2px 8px",borderRadius:20,fontSize:10}}>{k}: {v}</span>)}
+              </div>
+            )}
+            <div className="verdict-body">{result.reasoning}</div>
+            {result.watch_out&&<div style={{marginTop:7,padding:"6px 10px",background:"rgba(0,0,0,.05)",borderRadius:6,fontSize:11,color:"var(--terra)"}}>⚠ {result.watch_out}</div>}
+            {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
+            {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
+          </div>
+          <div style={{marginTop:11,display:"flex",gap:7,flexWrap:"wrap"}}>
+            <button className="btn btn-primary" onClick={handleSave}>Save to {destination}</button>
+            <button className="btn btn-outline" onClick={reset}>Scan another</button>
+            <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+          </div>
         </div>
       )}
     </div>
@@ -1194,65 +1187,57 @@ Return ONLY valid JSON:
 
 // ─── MEDICAL TAB ─────────────────────────────────────────────────────────────
 function MedicalTab({medical,setMedical}){
-  const[editing,setEditing]=useState(null);
-  const[editVal,setEditVal]=useState("");
-
-  const sections=[
-    {key:"kidney",title:"Kidney Protocol",icon:"🫘"},
-    {key:"hrt",title:"HRT",icon:"💊"},
-    {key:"nerve",title:"Nerve / Arm",icon:"💪"},
-    {key:"other",title:"Other Notes",icon:"📋"},
-  ];
-
+  const[editing,setEditing]=useState(null);const[editVal,setEditVal]=useState("");
+  const sections=[{key:"kidney",title:"Kidney Protocol",icon:"🫘"},{key:"hrt",title:"HRT",icon:"💊"},{key:"nerve",title:"Nerve / Arm",icon:"💪"},{key:"other",title:"Other Notes",icon:"📋"}];
   function startEdit(key){setEditing(key);setEditVal(medical[key]);}
-  function saveEdit(){
-    const u={...medical,[editing]:editVal};
-    setMedical(u);store.set("medical",u);setEditing(null);
-  }
-
+  function saveEdit(){const u={...medical,[editing]:editVal};setMedical(u);store.set("medical",u);setEditing(null);}
   return(
     <div className="section">
       <p className="section-title">Medical Context</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>
-        This is the medical information the Coach uses to personalize your nutrition advice. Update it when you get new test results or your doctor changes your protocol.
-      </p>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Medical information the Coach uses to personalize your advice. Update when you get new test results or your doctor changes your protocol.</p>
       {sections.map(s=>(
         <div className="med-card" key={s.key}>
           <div className="med-card-title">
             {s.icon} {s.title}
             {editing===s.key
               ?<div style={{display:"flex",gap:7}}><button className="btn btn-primary btn-sm" onClick={saveEdit}>Save</button><button className="btn btn-outline btn-sm" onClick={()=>setEditing(null)}>Cancel</button></div>
-              :<button className="btn btn-outline btn-sm" onClick={()=>startEdit(s.key)}>Edit</button>
-            }
+              :<button className="btn btn-outline btn-sm" onClick={()=>startEdit(s.key)}>Edit</button>}
           </div>
           {editing===s.key
             ?<textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/>
-            :<div className="med-text">{medical[s.key]}</div>
-          }
+            :<div className="med-text">{medical[s.key]}</div>}
         </div>
       ))}
     </div>
   );
 }
 
-// ─── PANTRY TAB ──────────────────────────────────────────────────────────────
+// ─── PANTRY TAB — FIX #11: Custom categories + multi-photo ───────────────────
 function PantryTab({pantry,setPantry}){
   const[name,setName]=useState("");const[qty,setQty]=useState("");const[cat,setCat]=useState("dairy");
-  const CATS=["dairy","fish","protein","grain","produce","condiment","other"];
+  const[customCatInput,setCustomCatInput]=useState("");
+  const[extraCats,setExtraCats]=useState([]);
+  const BASE_CATS=["dairy","fish","protein","grain","produce","seeds & nuts","condiment","supplement","other"];
+  const ALL_CATS=[...BASE_CATS,...extraCats];
+
   const[micOn,setMicOn]=useState(false);const recRef2=React.useRef(null);
-  function startMic(){
-    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){alert("Use Safari on iPhone.");return;}
-    var r=new SR();r.lang="en-US";r.continuous=false;r.interimResults=false;
-    r.onstart=function(){setMicOn(true);};
-    r.onresult=function(e){if(e.results[0][0].transcript)setName(function(p){return p?p+" "+e.results[0][0].transcript:e.results[0][0].transcript;});setMicOn(false);};
-    r.onerror=function(){setMicOn(false);};r.onend=function(){setMicOn(false);};
-    try{r.start();recRef2.current=r;}catch(e){setMicOn(false);}
-  }
+  function startMic(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert("Use Safari on iPhone.");return;}var r=new SR();r.lang="en-US";r.continuous=false;r.interimResults=false;r.onstart=()=>setMicOn(true);r.onresult=e=>{if(e.results[0][0].transcript)setName(p=>p?p+" "+e.results[0][0].transcript:e.results[0][0].transcript);setMicOn(false);};r.onerror=()=>setMicOn(false);r.onend=()=>setMicOn(false);try{r.start();recRef2.current=r;}catch(e){setMicOn(false);}}
   function stopMic(){if(recRef2.current)recRef2.current.stop();setMicOn(false);}
+
   function addItem(){if(!name.trim())return;const u=[...pantry,{id:Date.now(),name:name.trim(),qty:qty.trim(),cat}];setPantry(u);store.set("pantry",u);setName("");setQty("");}
-  function removeItem(id){const u=pantry.filter(function(p){return p.id!==id;});setPantry(u);store.set("pantry",u);}
-  const grouped=CATS.reduce(function(a,c){a[c]=pantry.filter(function(p){return p.cat===c;});return a;},{});
+  function removeItem(id){const u=pantry.filter(p=>p.id!==id);setPantry(u);store.set("pantry",u);}
+
+  // FIX #11: Add custom category
+  function addCustomCat(){
+    const c=customCatInput.trim().toLowerCase();
+    if(!c||ALL_CATS.includes(c))return;
+    setExtraCats(p=>[...p,c]);
+    setCat(c);
+    setCustomCatInput("");
+  }
+
+  const grouped=ALL_CATS.reduce((a,c)=>{a[c]=pantry.filter(p=>p.cat===c);return a;},{});
+
   return(
     <div className="section">
       <p className="section-title">Pantry</p>
@@ -1260,49 +1245,62 @@ function PantryTab({pantry,setPantry}){
       <div className="add-food-area" style={{marginBottom:14}}>
         <div className="add-food-title">Add item</div>
         <div className="input-row" style={{marginBottom:6}}>
-          <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={function(e){setName(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")addItem();}}/>
+          <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
           <button className={"mic-btn "+(micOn?"listening":"idle")} onClick={micOn?stopMic:startMic}>{micOn?"🔴":"🎤"}</button>
-          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16}}>
-            📷<input type="file" accept="image/*" style={{display:"none"}} onChange={function(e){var file=e.target.files[0];if(!file)return;var r2=new FileReader();r2.onload=async function(ev){var b64=ev.target.result.split(",")[1];var raw=await callClaudeWithImage(b64,file.type||"image/jpeg","Read this product label name only.","Return just the product name, nothing else.");setName(raw.slice(0,80)||"Scanned");};r2.readAsDataURL(file);e.target.value="";}}/>
+          {/* FIX #1: Multiple photos for pantry */}
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
+            📷
+            <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+              onChange={async e=>{
+                const files=Array.from(e.target.files);
+                if(!files.length)return;
+                // Use all photos together to identify the product
+                const imgs=await Promise.all(files.map(async f=>({b64:await fileToBase64(f),mediaType:f.type||"image/jpeg"})));
+                const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");
+                setName(raw.slice(0,80)||"Scanned product");
+                e.target.value="";
+              }}/>
           </label>
         </div>
         <div className="input-row">
-          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup)" value={qty} onChange={function(e){setQty(e.target.value);}}/>
-          <select className="text-input" value={cat} onChange={function(e){setCat(e.target.value);}} style={{maxWidth:90}}>{CATS.map(function(c){return <option key={c} value={c}>{c}</option>;})}</select>
+          <input className="text-input" style={{flex:1}} placeholder="Notes (e.g. 300mg Ca/cup)" value={qty} onChange={e=>setQty(e.target.value)}/>
+          <select className="text-input" value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:110}}>
+            {ALL_CATS.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
           <button className="btn btn-primary" onClick={addItem}>Add</button>
+        </div>
+        {/* FIX #11: Add custom category */}
+        <div style={{display:"flex",gap:6,marginTop:6}}>
+          <input className="text-input" style={{flex:1,fontSize:11}} placeholder="New category name…"
+            value={customCatInput} onChange={e=>setCustomCatInput(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addCustomCat()}/>
+          <button className="btn btn-outline btn-sm" onClick={addCustomCat} disabled={!customCatInput.trim()}>+ Category</button>
         </div>
       </div>
       {pantry.length===0?(<div className="empty-state"><div className="empty-icon">🥫</div><div>Add your regular products here</div></div>)
-      :CATS.map(function(c){return grouped[c]&&grouped[c].length>0&&(
+      :ALL_CATS.map(c=>grouped[c]&&grouped[c].length>0&&(
         <div key={c} style={{marginBottom:14}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{c}</div>
-          {grouped[c].map(function(item){return(
+          {grouped[c].map(item=>(
             <div className="pantry-item" key={item.id}>
               <div style={{flex:1}}><div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{item.name}</div>{item.qty&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{item.qty}</div>}</div>
-              <button className="food-delete" onClick={function(){removeItem(item.id);}}>×</button>
+              <button className="food-delete" onClick={()=>removeItem(item.id)}>×</button>
             </div>
-          );})}
+          ))}
         </div>
-      );})}
+      ))}
     </div>
   );
 }
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical}){
-  const[messages,setMessages]=useState([{role:"assistant",content:"Hi Sofia — I know your full context: kidney stones, HRT, your exact protocol, all your supplements and medications, today's exercise, and what you've eaten. Ask me anything, including about skincare products, medications, or whether something is right for you today."}]);
+  const[messages,setMessages]=useState([{role:"assistant",content:"Hi Sofia — I have your full context: kidney stones, HRT, your exact protocol, all supplements and medications, today's exercise, and what you've eaten. I'm pescatarian-aware — I'll never suggest meat. Ask me anything."}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
-
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
-
-  const QUICK=[
-    "What should I eat for dinner?","Am I getting enough protein today?","Is my Vitamin D working?",
-    "What's missing nutritionally?","Suggest something from my pantry","How's my sodium today?",
-    "Can I take Actron today?","What should I buy this week?","How are my kidneys doing nutrition-wise?",
-  ];
-
+  const QUICK=["What should I eat for dinner?","Am I getting enough protein today?","Is my Vitamin D working?","What's missing nutritionally?","Suggest something from my pantry","How's my sodium today?","Can I take Actron today?","What should I buy this week?","How are my kidneys doing nutrition-wise?"];
   async function send(text){
     if(!text.trim()||loading)return;
     const userMsg={role:"user",content:text};const newMsgs=[...messages,userMsg];
@@ -1310,9 +1308,7 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
     const reply=await callClaude(newMsgs.map(m=>({role:m.role,content:m.content})),buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,medical));
     setMessages([...newMsgs,{role:"assistant",content:reply}]);setLoading(false);
   }
-
   function renderText(text){return text.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")?<strong key={i}>{p.slice(2,-2)}</strong>:p);}
-
   return(
     <div className="section">
       <p className="section-title">Nutrition Coach</p>
@@ -1331,12 +1327,8 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           onChange={e=>setInput(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
-        <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>
-          {listening?"🔴":"🎤"}
-        </button>
-        <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||!input.trim()}>
-          {loading?<span className="loading-spin"/>:"Send"}
-        </button>
+        <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>{listening?"🔴":"🎤"}</button>
+        <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||!input.trim()}>{loading?<span className="loading-spin"/>:"Send"}</button>
       </div>
     </div>
   );
@@ -1380,13 +1372,34 @@ function ProfileTab({profile,setProfile}){
   );
 }
 
+// ─── SKIN PRODUCTS (for Scan → Skin save) ────────────────────────────────────
+function SkinProductsTab({skinProducts,setSkinProducts}){
+  return(
+    <div style={{padding:18}}>
+      <p style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19,color:"var(--green)",marginBottom:14}}>Skin Products</p>
+      {skinProducts.length===0?(<div className="empty-state"><div className="empty-icon">✨</div><div>Scan a product in the Scan tab and save it here</div></div>)
+      :skinProducts.map(p=>(
+        <div className="pantry-item" key={p.id}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{p.name}</div>
+            {p.verdict&&<div style={{fontSize:10,color:p.verdict==="yes"?"var(--green2)":p.verdict==="no"?"var(--terra)":"var(--gold)",marginTop:2}}>{p.verdict_emoji} {p.headline}</div>}
+            {p.reasoning&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:3,fontStyle:"italic"}}>{p.reasoning}</div>}
+          </div>
+          <button className="food-delete" onClick={()=>{const u=skinProducts.filter(x=>x.id!==p.id);setSkinProducts(u);store.set("skin-products",u);}}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
-  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:55,potassium_mg:3500,magnesium_mg:320},
+  // FIX #10: protein_g 65 not 55
+  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
   conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
-  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary"],
-  notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always.",
+  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian"],
+  notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always. PESCATARIAN — no meat.",
 };
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
@@ -1402,22 +1415,24 @@ function App(){
   const[skChecks,setSkChecks]=useState({});
   const[injections,setInjections]=useState([]);
   const[medical,setMedical]=useState(DEFAULT_MEDICAL);
+  const[skinProducts,setSkinProducts]=useState([]);
   const[loaded,setLoaded]=useState(false);
 
   useEffect(()=>{
     async function load(){
       try{
-      const p=await store.get("profile");if(p)setProfile(p);
-      const pan=await store.get("pantry");if(pan)setPantry(pan);
-      const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
-      const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
-      const m=await store.get("master");if(m)setMaster(m);
-      const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
-      const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
-      const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
-      const inj=await store.get("injections");if(inj)setInjections(inj);
-      const med=await store.get("medical");if(med)setMedical(med);
-      setLoaded(true);
+        const p=await store.get("profile");if(p)setProfile(p);
+        const pan=await store.get("pantry");if(pan)setPantry(pan);
+        const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
+        const w=await store.get("water-"+todayKey());if(w!==null)setWater(w);
+        const m=await store.get("master");if(m)setMaster(m);
+        const t=await store.get("taken-"+todayKey());if(t)setTakenToday(t);
+        const ex=await store.get("ex-"+todayKey());if(ex)setExLogs(ex);
+        const sk=await store.get("sk-checks");if(sk)setSkChecks(sk);
+        const inj=await store.get("injections");if(inj)setInjections(inj);
+        const med=await store.get("medical");if(med)setMedical(med);
+        const sp=await store.get("skin-products");if(sp)setSkinProducts(sp);
+        setLoaded(true);
       }catch(e){console.warn(e);}
       document.getElementById("splash").style.display="none";
       document.getElementById("root").style.display="block";
@@ -1426,23 +1441,37 @@ function App(){
     if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
   },[]);
 
+  // FIX #8: Handle scan save including skin
   function handleScanSave(r,dest){
-    if(dest==="pantry"){var item={id:Date.now(),name:r.product_name||"Scanned",qty:r.serving_advice||"",cat:"other"};var u=[...pantry,item];setPantry(u);store.set("pantry",u);}
-    else if(dest==="medical"){var note=" ["+new Date().toLocaleDateString()+"] "+(r.product_name||"")+": "+(r.reasoning||"");var nm={...medical,other:(medical.other||"")+note};setMedical(nm);store.set("medical",nm);}
-    else if(dest==="meds"){var ni={id:Date.now(),name:r.product_name||"Scanned",dose:r.serving_advice||"",category:"supplement",time:"morning",notes:r.reasoning||"",paused:false,synergies:[]};var u2=[...master,ni];setMaster(u2);store.set("master",u2);}
+    if(dest==="pantry"){
+      const item={id:Date.now(),name:r.product_name||"Scanned",qty:r.serving_advice||"",cat:"other"};
+      const u=[...pantry,item];setPantry(u);store.set("pantry",u);
+    } else if(dest==="skin"){
+      const item={id:Date.now(),name:r.product_name||"Scanned",verdict:r.verdict,verdict_emoji:r.verdict_emoji,headline:r.headline,reasoning:r.reasoning,date:todayKey()};
+      const u=[...skinProducts,item];setSkinProducts(u);store.set("skin-products",u);
+    } else if(dest==="medical"){
+      const note=" ["+new Date().toLocaleDateString()+"] "+(r.product_name||"")+": "+(r.reasoning||"");
+      const nm={...medical,other:(medical.other||"")+note};setMedical(nm);store.set("medical",nm);
+    } else if(dest==="meds"){
+      const ni={id:Date.now(),name:r.product_name||"Scanned",dose:r.serving_advice||"",category:"supplement",time:"morning",notes:r.reasoning||"",paused:false,synergies:[]};
+      const u2=[...master,ni];setMaster(u2);store.set("master",u2);
+    }
   }
-    if(!loaded)return null;
+
+  if(!loaded)return null;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  // FIX #5: Shortened tab labels to prevent overlap
   const TABS=[
     {id:"today",label:"Today"},
     {id:"exercise",label:"Exercise"},
     {id:"skincare",label:"Skin"},
     {id:"meds",label:"Meds"},
     {id:"scan",label:"📷 Scan"},
-    {id:"injections",label:"Procedures"},
+    {id:"injections",label:"Proced."},
     {id:"medical",label:"Medical"},
     {id:"pantry",label:"Pantry"},
+    {id:"skin-products",label:"Skin Prod."},
     {id:"coach",label:"Coach ✦"},
     {id:"profile",label:"Profile"},
   ];
@@ -1460,10 +1489,11 @@ function App(){
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
-        {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave}/>}
+        {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
+        {tab==="skin-products"&&<SkinProductsTab skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="coach"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical}/>}
         {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile}/>}
       </div>
