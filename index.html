@@ -1845,6 +1845,529 @@ function SkinProductsTab({skinProducts,setSkinProducts}){
   );
 }
 
+
+// ─── ONBOARDING FLOW ──────────────────────────────────────────────────────────
+const COMMON_CONDITIONS=[
+  "Kidney stones","Diabetes type 1","Diabetes type 2","Hypertension","High cholesterol",
+  "HRT / Menopause","Thyroid condition","Heart disease","Celiac disease","IBS / Crohn's",
+  "Osteoporosis","Cancer (in treatment)","Macular degeneration","Glaucoma","Anxiety / Depression",
+  "Autoimmune condition","Arthritis","PCOS","Endometriosis","Sleep apnea"
+];
+const COMMON_DIETS=[
+  "Pescatarian","Vegetarian","Vegan","Gluten-free","Dairy-free",
+  "Low sodium","Low oxalate","Keto","Paleo","Low FODMAP","No restrictions"
+];
+const COMMON_GOALS=[
+  "Track daily nutrition","Manage a medical condition","Lose weight","Maintain weight",
+  "Build muscle","Improve sleep","Manage medications","Skincare routine","Prevent disease recurrence"
+];
+const BLOOD_TYPES=["A+","A-","B+","B-","AB+","AB-","O+","O-","Unknown"];
+
+function OnboardingFlow({onComplete}){
+  const[step,setStep]=useState(1);
+  const TOTAL=9;
+  // Step 2
+  const[firstName,setFirstName]=useState("");
+  const[age,setAge]=useState("");
+  const[weightKg,setWeightKg]=useState("");
+  const[heightCm,setHeightCm]=useState("");
+  const[bloodType,setBloodType]=useState("");
+  const[weightUnit,setWeightUnit]=useState("kg");
+  const[heightUnit,setHeightUnit]=useState("cm");
+  // Step 3
+  const[conditions,setConditions]=useState([]);
+  const[condInput,setCondInput]=useState("");
+  // Step 4
+  const[diets,setDiets]=useState([]);
+  const[dietInput,setDietInput]=useState("");
+  // Step 5
+  const[goals,setGoals]=useState([]);
+  // Step 6 — skincare (simplified, can expand)
+  const[skincareAm,setSkincareAm]=useState([]);
+  const[skincarePm,setSkincarePm]=useState([]);
+  const[skStep,setSkStep]=useState("");
+  const[skipSkin,setSkipSkin]=useState(false);
+  // Step 7 — meds (simplified)
+  const[medInput,setMedInput]=useState("");
+  const[medList,setMedList]=useState([]);
+  const[skipMeds,setSkipMeds]=useState(false);
+  // Step 8 — connect apps (future, just UI for now)
+  // Step 9 — T&C
+  const[tcAccepted,setTcAccepted]=useState(false);
+
+  function toggleArr(arr,setArr,val){
+    setArr(arr.includes(val)?arr.filter(x=>x!==val):[...arr,val]);
+  }
+
+  function finish(){
+    // Build profile from onboarding data
+    const wKg=weightUnit==="kg"?parseFloat(weightKg):Math.round(parseFloat(weightKg)/2.205*10)/10;
+    const hCm=heightUnit==="cm"?parseFloat(heightCm):Math.round(parseFloat(heightCm)*2.54);
+    const profile={
+      name:firstName,age:parseInt(age)||0,
+      weight_kg:wKg||44,height_cm:hCm||160,
+      blood_type:bloodType,
+      targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
+      conditions,restrictions:diets,goals,
+      notes:"",onboarded:true
+    };
+    store.set("profile",profile);
+    store.set("onboarded","true");
+    onComplete(profile);
+  }
+
+  const progress=Math.round((step/TOTAL)*100);
+
+  return(
+    <div style={{minHeight:"100vh",background:"var(--cream)",display:"flex",flexDirection:"column"}}>
+      <style>{STYLE}</style>
+      {/* Progress bar */}
+      {step>1&&step<TOTAL&&(
+        <div style={{height:3,background:"var(--cream2)"}}>
+          <div style={{height:"100%",background:"var(--green)",width:progress+"%",transition:"width .3s"}}/>
+        </div>
+      )}
+
+      <div style={{flex:1,padding:"32px 24px 24px",display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto",width:"100%"}}>
+
+        {/* ── SCREEN 1: Welcome ── */}
+        {step===1&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:16}}>🥗</div>
+            <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:300,color:"var(--green)",marginBottom:8}}>NutriCoach</h1>
+            <p style={{fontSize:13,color:"var(--ink3)",lineHeight:1.7,marginBottom:12}}>Your personal AI nutrition companion — tailored to your health conditions, tracking what matters, coaching you in real time.</p>
+            <p style={{fontSize:11,color:"var(--ink3)",lineHeight:1.6,marginBottom:32,maxWidth:300}}>Works for kidney stones, diabetes, heart disease, HRT, and any condition where diet matters.</p>
+            <button className="btn btn-primary" style={{width:"100%",padding:"14px",fontSize:12,marginBottom:12}} onClick={()=>setStep(2)}>Get started →</button>
+            <button className="btn btn-outline" style={{width:"100%",padding:"14px",fontSize:12}} onClick={()=>setStep(9)}>I already have an account</button>
+          </div>
+        )}
+
+        {/* ── SCREEN 2: About you ── */}
+        {step===2&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 1 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>About you</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:20,lineHeight:1.6}}>This helps personalize your nutrition targets and calorie calculations.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>First name *</div>
+                <input className="text-input" style={{width:"100%"}} placeholder="Your name" value={firstName} onChange={e=>setFirstName(e.target.value)}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Age</div>
+                <input className="text-input" style={{width:"100%"}} type="number" placeholder="e.g. 54" value={age} onChange={e=>setAge(e.target.value)}/>
+              </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Weight</div>
+                <div style={{display:"flex",gap:7}}>
+                  <input className="text-input" style={{flex:1}} type="number" step="0.1" placeholder={weightUnit==="kg"?"e.g. 44":"e.g. 97"} value={weightKg} onChange={e=>setWeightKg(e.target.value)}/>
+                  <select className="text-input" style={{width:64}} value={weightUnit} onChange={e=>setWeightUnit(e.target.value)}>
+                    <option value="kg">kg</option><option value="lbs">lbs</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Height</div>
+                <div style={{display:"flex",gap:7}}>
+                  <input className="text-input" style={{flex:1}} type="number" placeholder={heightUnit==="cm"?"e.g. 160":"e.g. 63"} value={heightCm} onChange={e=>setHeightCm(e.target.value)}/>
+                  <select className="text-input" style={{width:64}} value={heightUnit} onChange={e=>setHeightUnit(e.target.value)}>
+                    <option value="cm">cm</option><option value="in">in</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Blood type</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {BLOOD_TYPES.map(bt=>(
+                    <button key={bt} onClick={()=>setBloodType(bt)}
+                      style={{padding:"6px 12px",fontSize:11,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"monospace",
+                        background:bloodType===bt?"var(--green)":"white",color:bloodType===bt?"white":"var(--ink3)",
+                        borderColor:bloodType===bt?"var(--green)":"var(--border)"}}>
+                      {bt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:7,marginTop:24}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(1)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(3)} disabled={!firstName.trim()}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 3: Health conditions ── */}
+        {step===3&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 2 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Health conditions</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Tap any that apply, or type your own. The app adapts your nutrition rules to match.</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:12}}>
+              {COMMON_CONDITIONS.map(c=>(
+                <button key={c} onClick={()=>toggleArr(conditions,setConditions,c)}
+                  style={{padding:"7px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"monospace",
+                    background:conditions.includes(c)?"var(--green)":"white",color:conditions.includes(c)?"white":"var(--ink2)",
+                    borderColor:conditions.includes(c)?"var(--green)":"var(--border)"}}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:7,marginBottom:6}}>
+              <input className="text-input" style={{flex:1}} placeholder="Add your own condition…" value={condInput} onChange={e=>setCondInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&condInput.trim()){setConditions(p=>[...p,condInput.trim()]);setCondInput("");}}}/>
+              <button className="btn btn-outline btn-sm" onClick={()=>{if(condInput.trim()){setConditions(p=>[...p,condInput.trim()]);setCondInput("");}}}>Add</button>
+            </div>
+            {conditions.filter(c=>!COMMON_CONDITIONS.includes(c)).map((c,i)=>(
+              <div key={i} className="condition-tag" style={{marginBottom:4}}>{c}<button className="remove-tag" onClick={()=>setConditions(conditions.filter(x=>x!==c))}>×</button></div>
+            ))}
+            <div style={{display:"flex",gap:7,marginTop:20}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(2)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(4)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 4: Diet ── */}
+        {step===4&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 3 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Dietary restrictions</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Tap all that apply. The Coach will never suggest foods that conflict with your diet.</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:12}}>
+              {COMMON_DIETS.map(d=>(
+                <button key={d} onClick={()=>toggleArr(diets,setDiets,d)}
+                  style={{padding:"7px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"monospace",
+                    background:diets.includes(d)?"var(--terra)":"white",color:diets.includes(d)?"white":"var(--ink2)",
+                    borderColor:diets.includes(d)?"var(--terra)":"var(--border)"}}>
+                  {d}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:7,marginBottom:6}}>
+              <input className="text-input" style={{flex:1}} placeholder="Add your own restriction…" value={dietInput} onChange={e=>setDietInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&dietInput.trim()){setDiets(p=>[...p,dietInput.trim()]);setDietInput("");}}}/>
+              <button className="btn btn-outline btn-sm" onClick={()=>{if(dietInput.trim()){setDiets(p=>[...p,dietInput.trim()]);setDietInput("");}}}>Add</button>
+            </div>
+            <div style={{display:"flex",gap:7,marginTop:20}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(3)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(5)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 5: Goals ── */}
+        {step===5&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 4 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Your goals</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>What do you want this app to help you with?</p>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {COMMON_GOALS.map(g=>(
+                <div key={g} onClick={()=>toggleArr(goals,setGoals,g)}
+                  style={{padding:"12px 14px",border:"1px solid",borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:10,
+                    background:goals.includes(g)?"var(--green3)":"white",
+                    borderColor:goals.includes(g)?"var(--green2)":"var(--border)"}}>
+                  <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,
+                    background:goals.includes(g)?"var(--green)":"white",borderColor:goals.includes(g)?"var(--green)":"var(--border)",color:"white"}}>
+                    {goals.includes(g)?"✓":""}
+                  </div>
+                  <span style={{fontSize:12,color:"var(--ink)"}}>{g}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:7,marginTop:20}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(4)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(6)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 6: Skincare (optional) ── */}
+        {step===6&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 5 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Skincare routine</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:16,lineHeight:1.6}}>Add your daily skincare steps — or skip and set it up later in the Skin tab.</p>
+            {!skipSkin&&(
+              <>
+                <div style={{fontSize:10,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>☀️ Morning steps</div>
+                {skincareAm.map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}>
+                    <span style={{fontSize:11,flex:1,color:"var(--ink)"}}>{s}</span>
+                    <button className="food-delete" onClick={()=>setSkincareAm(skincareAm.filter((_,j)=>j!==i))}>×</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:7,marginBottom:14}}>
+                  <input className="text-input" style={{flex:1,fontSize:11}} placeholder="e.g. Vitamin C serum" value={skStep} onChange={e=>setSkStep(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&skStep.trim()){setSkincareAm(p=>[...p,skStep.trim()]);setSkStep("");}}}/>
+                  <button className="btn btn-outline btn-sm" onClick={()=>{if(skStep.trim()){setSkincareAm(p=>[...p,skStep.trim()]);setSkStep("");}}}>Add</button>
+                </div>
+                <div style={{fontSize:10,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>🌙 Evening steps</div>
+                {skincarePm.map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}>
+                    <span style={{fontSize:11,flex:1,color:"var(--ink)"}}>{s}</span>
+                    <button className="food-delete" onClick={()=>setSkincarePm(skincarePm.filter((_,j)=>j!==i))}>×</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:7,marginBottom:8}}>
+                  <input className="text-input" style={{flex:1,fontSize:11}} placeholder="e.g. Retinol" value={skStep} onChange={e=>setSkStep(e.target.value)}/>
+                  <button className="btn btn-outline btn-sm" onClick={()=>{if(skStep.trim()){setSkincarePm(p=>[...p,skStep.trim()]);setSkStep("");}}}>Add</button>
+                </div>
+              </>
+            )}
+            <div style={{display:"flex",gap:7,marginTop:12}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(5)}>Back</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>{setSkipSkin(true);setStep(7);}}>Skip</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(7)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 7: Medications (optional) ── */}
+        {step===7&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 6 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Medications & supplements</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Add your current medications or supplements — or skip and add them later in the Meds tab.</p>
+            <div style={{display:"flex",gap:7,marginBottom:8}}>
+              <input className="text-input" style={{flex:1}} placeholder="e.g. Vitamin D3, Metformin…" value={medInput} onChange={e=>setMedInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&medInput.trim()){setMedList(p=>[...p,medInput.trim()]);setMedInput("");}}}/>
+              <button className="btn btn-outline btn-sm" onClick={()=>{if(medInput.trim()){setMedList(p=>[...p,medInput.trim()]);setMedInput("");}}}>Add</button>
+            </div>
+            {medList.map((m,i)=>(
+              <div key={i} className="condition-tag" style={{marginBottom:5}}>{m}<button className="remove-tag" onClick={()=>setMedList(medList.filter((_,j)=>j!==i))}>×</button></div>
+            ))}
+            <div style={{display:"flex",gap:7,marginTop:20}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(6)}>Back</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(8)}>Skip</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(8)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 8: Connect apps ── */}
+        {step===8&&(
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 7 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Connect health apps</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:20,lineHeight:1.6}}>Sync your data from other health apps so you don't have to enter it twice. You can connect these later from your Profile.</p>
+            {[
+              {name:"Apple Health",icon:"🍎",desc:"Weight, steps, sleep, vitals"},
+              {name:"Fitbit",icon:"⌚",desc:"Activity, sleep, heart rate"},
+              {name:"Garmin",icon:"🏃",desc:"Workouts, sleep, body metrics"},
+              {name:"Oura Ring",icon:"💍",desc:"Sleep stages, readiness, HRV"},
+              {name:"MyFitnessPal",icon:"🥗",desc:"Food history, nutrition data"},
+              {name:"Withings",icon:"⚖️",desc:"Weight scale, blood pressure"},
+            ].map(app=>(
+              <div key={app.name} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",border:"1px solid var(--border)",borderRadius:10,marginBottom:8}}>
+                <span style={{fontSize:22}}>{app.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{app.name}</div>
+                  <div style={{fontSize:10,color:"var(--ink3)"}}>{app.desc}</div>
+                </div>
+                <button className="btn btn-outline btn-sm" style={{opacity:.5}} onClick={()=>alert("Health app integrations coming soon! This will be available in the next update.")}>
+                  Connect
+                </button>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:7,marginTop:16}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(7)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(9)}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 9: Terms & Conditions ── */}
+        {step===9&&(
+          <div style={{flex:1,display:"flex",flexDirection:"column"}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 8 of 8</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Terms & Privacy</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>Please read and accept before using the app.</p>
+            <div style={{flex:1,background:"white",border:"1px solid var(--border)",borderRadius:10,padding:14,overflowY:"auto",fontSize:10,color:"var(--ink2)",lineHeight:1.8,marginBottom:14,maxHeight:320}}>
+              <strong style={{display:"block",marginBottom:8,fontSize:11}}>Terms of Service & Privacy Policy</strong>
+              <strong>1. Not medical advice.</strong> NutriCoach is a personal wellness tracking tool. It does not provide medical diagnoses, prescriptions, or professional health advice. Always consult your doctor before making changes to your diet or medications.
+
+
+              <strong>2. Your data stays on your device.</strong> All your personal health information is stored locally on your phone. We do not collect, sell, or share your personal data with third parties.
+
+
+              <strong>3. Accuracy.</strong> Nutritional values are estimates based on AI analysis and public databases. They may not be perfectly accurate. Use them as a guide, not a precise measurement.
+
+
+              <strong>4. Health conditions.</strong> If you have a serious medical condition, use this app as a complement to — not a replacement for — professional medical care.
+
+
+              <strong>5. No liability.</strong> The developers of NutriCoach are not liable for health outcomes resulting from use of the app. You use this app at your own discretion.
+
+
+              <strong>6. Updates.</strong> These terms may be updated. Continued use of the app after updates constitutes acceptance.
+
+
+              <strong>7. Contact.</strong> For questions or concerns, contact us through the app store listing.
+            </div>
+            <div onClick={()=>setTcAccepted(!tcAccepted)}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:tcAccepted?"var(--green3)":"var(--cream2)",border:"1px solid",borderColor:tcAccepted?"var(--green2)":"var(--border)",borderRadius:10,cursor:"pointer",marginBottom:16}}>
+              <div style={{width:22,height:22,borderRadius:4,border:"2px solid",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,
+                background:tcAccepted?"var(--green)":"white",borderColor:tcAccepted?"var(--green)":"var(--border)",color:"white"}}>
+                {tcAccepted?"✓":""}
+              </div>
+              <span style={{fontSize:11,color:"var(--ink)",lineHeight:1.5}}>I have read and agree to the Terms of Service and Privacy Policy</span>
+            </div>
+            <div style={{display:"flex",gap:7}}>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(8)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2,opacity:tcAccepted?1:.4}} onClick={()=>{if(tcAccepted)finish();}} disabled={!tcAccepted}>
+                Start using the app →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── SLEEP TAB ────────────────────────────────────────────────────────────────
+function SleepTab({sleepLog,setSleepLog,master,takenToday}){
+  const[bedtime,setBedtime]=useState("");
+  const[waketime,setWaketime]=useState("");
+  const[quality,setQuality]=useState(0);
+  const[notes,setNotes]=useState("");
+  const[showAdd,setShowAdd]=useState(false);
+
+  // Calculate hours slept
+  function calcHours(bed,wake){
+    if(!bed||!wake)return null;
+    const [bh,bm]=bed.split(":").map(Number);
+    const [wh,wm]=wake.split(":").map(Number);
+    let mins=(wh*60+wm)-(bh*60+bm);
+    if(mins<0)mins+=1440; // overnight
+    return Math.round(mins/60*10)/10;
+  }
+
+  function logSleep(){
+    if(!bedtime||!waketime)return;
+    const hours=calcHours(bedtime,waketime);
+    // Check if sleep aid was taken
+    const aidTaken=Object.keys(takenToday||{}).some(id=>{
+      const m=master.find(x=>x.id===id);
+      return takenToday[id]&&m&&m.name.toLowerCase().includes("sleep");
+    });
+    const entry={id:Date.now(),date:todayKey(),bedtime,waketime,hours,quality,notes:notes.trim(),aidTaken};
+    const u=[...sleepLog,entry];
+    setSleepLog(u);store.set("sleep-log",u);
+    setBedtime("");setWaketime("");setQuality(0);setNotes("");setShowAdd(false);
+  }
+
+  function removeEntry(id){const u=sleepLog.filter(e=>e.id!==id);setSleepLog(u);store.set("sleep-log",u);}
+
+  // Last 7 entries for chart
+  const recent=[...sleepLog].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,7).reverse();
+  const avgHours=recent.length?Math.round(recent.reduce((s,e)=>s+(e.hours||0),0)/recent.length*10)/10:null;
+
+  const qualityEmoji=["","😴","😐","🙂","😊","⭐️"];
+  const hoursColor=(h)=>h>=7?"var(--green2)":h>=5?"var(--gold)":"var(--terra)";
+
+  return(
+    <div className="section">
+      <p className="section-title">Sleep</p>
+
+      {/* Weekly summary ribbon */}
+      {recent.length>0&&(
+        <div className="day-ribbon" style={{marginBottom:14}}>
+          <div><div className="ribbon-label">Avg this week</div><div className="ribbon-val">{avgHours}h</div></div>
+          <div style={{textAlign:"center"}}><div className="ribbon-label">Nights logged</div><div className="ribbon-val">{recent.length}</div></div>
+          <div style={{textAlign:"right"}}><div className="ribbon-label">Last night</div><div className="ribbon-val">{recent[recent.length-1]?.hours||"—"}h</div></div>
+        </div>
+      )}
+
+      {/* Bar chart */}
+      {recent.length>0&&(
+        <div style={{background:"white",border:"1px solid var(--border)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+          <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:10}}>Last {recent.length} nights</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:60}}>
+            {recent.map((e,i)=>{
+              const pct=Math.min(100,Math.round(((e.hours||0)/10)*100));
+              const dayName=new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short"});
+              return(
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                  <div style={{fontSize:8,color:"var(--ink3)"}}>{e.hours||"?"}</div>
+                  <div style={{width:"100%",height:44,display:"flex",alignItems:"flex-end"}}>
+                    <div style={{width:"100%",height:pct+"%",minHeight:4,borderRadius:"3px 3px 0 0",background:hoursColor(e.hours||0),transition:"height .3s"}}/>
+                  </div>
+                  <div style={{fontSize:8,color:"var(--ink3)"}}>{dayName}</div>
+                  {e.aidTaken&&<div style={{fontSize:7,color:"var(--rose)"}}>💊</div>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:9,color:"var(--ink3)",marginTop:6}}>💊 = sleep aid taken · 🟢 ≥7h · 🟡 5-7h · 🔴 &lt;5h</div>
+        </div>
+      )}
+
+      {/* Log button */}
+      <button className="btn btn-primary" style={{width:"100%",marginBottom:14}} onClick={()=>setShowAdd(!showAdd)}>
+        {showAdd?"— Cancel":"+ Log last night's sleep"}
+      </button>
+
+      {showAdd&&(
+        <div className="add-food-area" style={{marginBottom:14}}>
+          <div className="add-food-title">Log sleep</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Bedtime</div>
+              <input className="text-input" type="time" style={{width:"100%"}} value={bedtime} onChange={e=>setBedtime(e.target.value)}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Wake time</div>
+              <input className="text-input" type="time" style={{width:"100%"}} value={waketime} onChange={e=>setWaketime(e.target.value)}/>
+            </div>
+          </div>
+          {bedtime&&waketime&&(
+            <div style={{textAlign:"center",fontSize:14,color:"var(--green)",fontFamily:"'Cormorant Garamond',serif",marginBottom:10}}>
+              {calcHours(bedtime,waketime)} hours slept
+            </div>
+          )}
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Sleep quality</div>
+            <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+              {[1,2,3,4,5].map(q=>(
+                <button key={q} onClick={()=>setQuality(q)}
+                  style={{fontSize:22,background:"none",border:"none",cursor:"pointer",opacity:quality>=q?1:.3,transition:"opacity .15s"}}>
+                  {qualityEmoji[q]}
+                </button>
+              ))}
+            </div>
+            {quality>0&&<div style={{textAlign:"center",fontSize:10,color:"var(--ink3)",marginTop:4}}>{["","Very poor","Poor","Fair","Good","Excellent"][quality]}</div>}
+          </div>
+          <input className="text-input" style={{width:"100%",marginBottom:8}} placeholder="Notes (e.g. woke up at 3am, vivid dreams…)" value={notes} onChange={e=>setNotes(e.target.value)}/>
+          <button className="btn btn-primary" style={{width:"100%"}} onClick={logSleep} disabled={!bedtime||!waketime}>Save</button>
+        </div>
+      )}
+
+      {/* History */}
+      {sleepLog.length===0?(
+        <div className="empty-state"><div className="empty-icon">🌙</div><div>No sleep logged yet — tap above to start</div></div>
+      ):(
+        <div>
+          <div className="cat-label">History</div>
+          {[...sleepLog].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>(
+            <div key={e.id} style={{background:"white",border:"1px solid var(--border)",borderRadius:10,padding:"11px 13px",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:24}}>{e.hours>=7?"😊":e.hours>=5?"😐":"😴"}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:hoursColor(e.hours||0)}}>{e.hours}h</span>
+                  <span style={{fontSize:10,color:"var(--ink3)"}}>{e.bedtime} → {e.waketime}</span>
+                  {e.aidTaken&&<span style={{fontSize:9,color:"var(--rose)"}}>💊 aid</span>}
+                </div>
+                <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>{e.date} {e.quality>0&&"· "+qualityEmoji[e.quality].repeat(e.quality)}</div>
+                {e.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic",marginTop:2}}>{e.notes}</div>}
+              </div>
+              <button className="food-delete" onClick={()=>removeEntry(e.id)}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
@@ -1870,11 +2393,14 @@ function App(){
   const[medical,setMedical]=useState(DEFAULT_MEDICAL);
   const[skinProducts,setSkinProducts]=useState([]);
   const[medDocs,setMedDocs]=useState([]);
+  const[sleepLog,setSleepLog]=useState([]);
   const[loaded,setLoaded]=useState(false);
+  const[onboarded,setOnboarded]=useState(false);
 
   useEffect(()=>{
     async function load(){
       try{
+        const ob=await store.get("onboarded");if(ob)setOnboarded(true);
         const p=await store.get("profile");if(p)setProfile(p);
         const pan=await store.get("pantry");if(pan)setPantry(pan);
         const log=await store.get("food-log-"+todayKey());if(log)setFoodLog(log);
@@ -1887,6 +2413,7 @@ function App(){
         const med=await store.get("medical");if(med)setMedical(med);
         const sp=await store.get("skin-products");if(sp)setSkinProducts(sp);
         const md=await store.get("med-docs");if(md)setMedDocs(md);
+        const sl=await store.get("sleep-log");if(sl)setSleepLog(sl);
         setLoaded(true);
       }catch(e){console.warn(e);}
       document.getElementById("splash").style.display="none";
@@ -1914,6 +2441,7 @@ function App(){
   }
 
   if(!loaded)return null;
+  if(!onboarded)return <OnboardingFlow onComplete={(p)=>{setProfile(p);setOnboarded(true);}}/>;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   // FIX #5: Shortened tab labels to prevent overlap
@@ -1923,6 +2451,7 @@ function App(){
     {id:"skincare",label:"Skin"},
     {id:"meds",label:"Meds"},
     {id:"scan",label:"📷 Scan"},
+    {id:"sleep",label:"Sleep"},
     {id:"injections",label:"Proced."},
     {id:"medical",label:"Medical"},
     {id:"pantry",label:"Pantry"},
@@ -1936,7 +2465,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.4</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.5</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
@@ -1944,6 +2473,7 @@ function App(){
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
         {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
+        {tab==="sleep"&&<SleepTab sleepLog={sleepLog} setSleepLog={setSleepLog} master={master} takenToday={takenToday}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical} medDocs={medDocs} setMedDocs={setMedDocs}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
