@@ -2030,8 +2030,7 @@ function PantryTab({pantry,setPantry}){
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections}){
-  const initMsg=(p)=>{const name=p?.name||"there";const conditions=(p?.conditions||[]).join(", ")||"your conditions";return[{role:"assistant",content:`Hi ${name}! I have your full context — ${conditions}, all your medications, today's exercise, food log, sleep, and upcoming procedures. Everything is connected. Ask me anything.`}];};
-  const[messages,setMessages]=useState(()=>initMsg(profile));
+  const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything."}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
@@ -2991,9 +2990,9 @@ function App(){
         const sp=await store.get("skin-products");if(sp)setSkinProducts(sp);
         const md=await store.get("med-docs");if(md)setMedDocs(md);
         const sl=await store.get("sleep-log");if(sl)setSleepLog(sl);
-        setLoaded(true);
       }catch(e){console.warn(e);}
       finally{
+        setLoaded(true);
         document.getElementById("splash").style.display="none";
         document.getElementById("root").style.display="block";
       }
