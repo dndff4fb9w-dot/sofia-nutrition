@@ -1224,14 +1224,61 @@ function MedsTab({master,setMaster}){
 }
 
 // ─── SCAN TAB — FIX #8 #9: multi-photo, skin destination, destination selector ─
+// Look up barcode in Open Food Facts, then get Claude verdict
+async function lookupBarcode(barcode){
+  try{
+    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
+    const d=await r.json();
+    if(d.status!==1||!d.product)return{error:"Product not found in database (barcode: "+barcode+")"};
+    const p=d.product;
+    const n=p.nutriments||{};
+    const per=n["energy-kcal_serving"]?"serving":"100g";
+    const factor=per==="serving"?1:1; // per serving when available
+    return{
+      product_name:p.product_name||p.product_name_en||"Unknown product",
+      brand:p.brands||"",
+      barcode,
+      serving:p.serving_size||"",
+      sodium:Math.round((n.sodium_serving||n["sodium_100g"]||0)*1000), // g to mg
+      calcium:Math.round(n.calcium_serving||n["calcium_100g"]||0),
+      calories:Math.round(n["energy-kcal_serving"]||n["energy-kcal_100g"]||0),
+      protein:Math.round((n.protein_serving||n["proteins_100g"]||0)*10)/10,
+      potassium:Math.round((n.potassium_serving||n["potassium_100g"]||0)*1000),
+      magnesium:Math.round((n.magnesium_serving||n["magnesium_100g"]||0)*1000),
+      fat:Math.round((n.fat_serving||n["fat_100g"]||0)*10)/10,
+      fiber:Math.round((n.fiber_serving||n["fiber_100g"]||0)*10)/10,
+      ingredients:p.ingredients_text_en||p.ingredients_text||"",
+      image:p.image_front_small_url||null,
+      per,
+    };
+  }catch(e){return{error:"Lookup failed: "+e.message};}
+}
+
+async function getBarcodeVerdict(product){
+  const sys=`You are analyzing a food product for Sofia.
+Sofia: kidney stones, sodium MUST stay under 1500mg/day total, low oxalate diet, calcium ~1000mg/day WITH meals, pescatarian (no meat).
+Return ONLY raw JSON:
+{"verdict":"yes"|"caution"|"no","verdict_emoji":"✅"|"⚠️"|"🚫","headline":"one punchy line","reasoning":"2 sentences specific to kidney stone risk","watch_out":"specific concern or null","oxalate":"low"|"med"|"high","serving_advice":"how much is safe or null"}`;
+  const msg=`Product: ${product.product_name} by ${product.brand}
+Per ${product.per}: ${product.calories}kcal, sodium ${product.sodium}mg, calcium ${product.calcium}mg, protein ${product.protein}g, potassium ${product.potassium}mg
+Ingredients: ${(product.ingredients||"").slice(0,300)}
+Is this safe for Sofia?`;
+  const raw=await callClaude([{role:"user",content:msg}],sys);
+  return safeParseJSON(raw)||{verdict:"caution",verdict_emoji:"⚠️",headline:"Could not analyze",reasoning:raw?.slice(0,200)||"",watch_out:null,oxalate:"low",serving_advice:null};
+}
+
 function ScanTab({profile,onSave,skinProducts,setSkinProducts}){
+  const[mode,setMode]=useState("photo"); // "photo" | "barcode"
+  // Photo scan state
   const[scanning,setScanning]=useState(false);
-  const[previews,setPreviews]=useState([]);
   const[stagedImgs,setStagedImgs]=useState([]);
   const[result,setResult]=useState(null);
   const[question,setQuestion]=useState("");
-  // FIX #9: destination selector before scanning
   const[destination,setDestination]=useState("pantry");
+  // Barcode state
+  const[barcodeScanning,setBarcodeScanning]=useState(false);
+  const[barcodeResult,setBarcodeResult]=useState(null);
+  const[manualBarcode,setManualBarcode]=useState("");
 
   async function stageScanPhotos(files){
     const newImgs=await Promise.all(Array.from(files).map(async f=>{
@@ -1239,107 +1286,207 @@ function ScanTab({profile,onSave,skinProducts,setSkinProducts}){
       return{...compressed,preview:URL.createObjectURL(f)};
     }));
     setStagedImgs(p=>[...p,...newImgs]);
-    setPreviews(p=>[...p,...newImgs.map(i=>i.preview)]);
   }
-
-  function removeStagedImg(idx){
-    setStagedImgs(p=>p.filter((_,i)=>i!==idx));
-    setPreviews(p=>p.filter((_,i)=>i!==idx));
-  }
+  function removeStagedImg(idx){setStagedImgs(p=>p.filter((_,i)=>i!==idx));}
 
   async function runScan(){
     if(stagedImgs.length===0)return;
     setResult(null);setScanning(true);
     const sys=`You are Sofia's nutrition coach analyzing a product.
-SOFIA: Kidney stones (bilateral), HRT, sodium ≤1500mg/day, low oxalate, calcium ~1000mg/day with meals. Pescatarian (no meat).
-Return ONLY valid JSON:
+SOFIA: Kidney stones, sodium ≤1500mg/day, low oxalate, calcium ~1000mg/day with meals. Pescatarian.
+Return ONLY raw JSON:
 {"product_name":"...","verdict":"yes"|"caution"|"no","verdict_emoji":"✅"|"⚠️"|"🚫","headline":"punchy summary","key_nutrients":{"sodium":"Xmg"},"reasoning":"2-3 sentences specific to Sofia","watch_out":"concern or null","better_alternative":"alternative or null","serving_advice":"advice or null"}`;
-    const prompt=question?`Sofia asks: "${question}"\n\nAnalyze this product. If multiple photos, use all of them together (e.g. front + label).`
-      :"Analyze this product label for me. If multiple photos, use all together.";
+    const prompt=question?`Sofia asks: "${question}". Analyze this product.`:"Analyze this product label for Sofia.";
     const raw=await callClaudeWithImages(stagedImgs,prompt,sys);
-    try{setResult(JSON.parse(raw.replace(/```json|```/g,"").trim()));}
-    catch{setResult({product_name:"Product",verdict:"caution",verdict_emoji:"⚠️",headline:"Could not read label clearly",reasoning:raw.slice(0,250),watch_out:null,better_alternative:null,serving_advice:null,key_nutrients:{}});}
+    setResult(safeParseJSON(raw)||{product_name:"Product",verdict:"caution",verdict_emoji:"⚠️",headline:"Could not read label",reasoning:raw?.slice(0,250)||"",watch_out:null,better_alternative:null,serving_advice:null,key_nutrients:{}});
     setScanning(false);
   }
 
-  function reset(){setPreviews([]);setStagedImgs([]);setResult(null);setQuestion("");}
-
-  // FIX #8: Save to skin
-  function handleSave(){
-    if(onSave)onSave(result,destination);
-    alert(`Saved to ${destination}!`);
+  // Barcode: take photo → Claude reads barcode number → Open Food Facts lookup → verdict
+  async function handleBarcodePhoto(file){
+    if(!file)return;
+    setBarcodeResult(null);setBarcodeScanning(true);
+    // Step 1: Claude reads barcode number from photo
+    const compressed=await compressImage(file);
+    const sys2=`Read the barcode or UPC/EAN number visible in this image. Return ONLY the numeric barcode, nothing else. No spaces, no dashes.`;
+    const raw=await callClaudeWithImage(compressed.b64,compressed.mediaType,"What is the barcode number in this image?",sys2);
+    const barcode=(raw||"").replace(/[^0-9]/g,"").trim();
+    if(!barcode||barcode.length<8){
+      setBarcodeResult({error:"Could not read barcode from photo. Try again with better lighting, or type the number manually."});
+      setBarcodeScanning(false);return;
+    }
+    // Step 2: Open Food Facts lookup
+    const product=await lookupBarcode(barcode);
+    if(product.error){setBarcodeResult({error:product.error});setBarcodeScanning(false);return;}
+    // Step 3: Claude verdict
+    const verdict=await getBarcodeVerdict(product);
+    setBarcodeResult({...product,...verdict});
+    setBarcodeScanning(false);
   }
+
+  async function handleManualBarcode(){
+    const b=manualBarcode.replace(/[^0-9]/g,"").trim();
+    if(b.length<8)return;
+    setBarcodeResult(null);setBarcodeScanning(true);
+    const product=await lookupBarcode(b);
+    if(product.error){setBarcodeResult({error:product.error});setBarcodeScanning(false);return;}
+    const verdict=await getBarcodeVerdict(product);
+    setBarcodeResult({...product,...verdict});
+    setBarcodeScanning(false);
+  }
+
+  function resetAll(){setStagedImgs([]);setResult(null);setQuestion("");setBarcodeResult(null);setManualBarcode("");}
+
+  function handleSave(){
+    const r=mode==="barcode"?barcodeResult:result;
+    if(onSave)onSave(r,destination);
+    alert("Saved to "+destination+"!");
+  }
+
+  const activeResult=mode==="barcode"?barcodeResult:result;
 
   return(
     <div className="section">
       <p className="section-title">Scanner</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>Photograph any product — food, skincare, supplements. Add multiple photos (front + label).</p>
 
-      {/* FIX #9: Destination selector BEFORE scanning */}
+      {/* Mode toggle */}
+      <div style={{display:"flex",gap:0,marginBottom:14,border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+        {[["photo","📷 Photo / Label"],["barcode","🔲 Barcode"]].map(([m,label])=>(
+          <button key={m} onClick={()=>{setMode(m);resetAll();}}
+            style={{flex:1,padding:"10px 6px",fontSize:10,letterSpacing:".06em",textTransform:"uppercase",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",
+              background:mode===m?"var(--green)":"white",color:mode===m?"white":"var(--ink3)",transition:"all .2s"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Destination selector */}
       <div style={{marginBottom:12}}>
         <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Save result to:</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[["pantry","🥫 Pantry"],["skin","✨ Skin"],["meds","💊 Meds"],["medical","🏥 Medical"]].map(([val,label])=>(
-            <button key={val} onClick={()=>setDestination(val)} style={{padding:"6px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"'DM Mono',monospace",background:destination===val?"var(--green)":"white",color:destination===val?"white":"var(--ink3)",borderColor:destination===val?"var(--green)":"var(--border)"}}>
+            <button key={val} onClick={()=>setDestination(val)}
+              style={{padding:"6px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"'DM Mono',monospace",
+                background:destination===val?"var(--green)":"white",color:destination===val?"white":"var(--ink3)",borderColor:destination===val?"var(--green)":"var(--border)"}}>
               {label}
             </button>
           ))}
         </div>
       </div>
 
-      <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
-        value={question} onChange={e=>setQuestion(e.target.value)}/>
-
-      {/* FIX #1 #8: Multi-photo staging for scan */}
-      <div className="photo-strip" style={{marginBottom:10}}>
-        {stagedImgs.map((img,i)=>(
-          <div className="photo-thumb" key={i}>
-            <img src={img.preview} alt=""/>
-            <button className="photo-thumb-remove" onClick={()=>removeStagedImg(i)}>×</button>
+      {/* ── PHOTO MODE ── */}
+      {mode==="photo"&&(
+        <>
+          <input className="text-input" style={{width:"100%",marginBottom:9}} placeholder="Optional: ask something specific…"
+            value={question} onChange={e=>setQuestion(e.target.value)}/>
+          <div className="photo-strip" style={{marginBottom:10}}>
+            {stagedImgs.map((img,i)=>(
+              <div className="photo-thumb" key={i}>
+                <img src={img.preview} alt=""/>
+                <button className="photo-thumb-remove" onClick={()=>removeStagedImg(i)}>×</button>
+              </div>
+            ))}
+            <div className="photo-add-btn">
+              <span>📷</span><span className="photo-add-label">Add photo</span>
+              <input type="file" accept="image/*" multiple onChange={e=>{stageScanPhotos(e.target.files);e.target.value="";}} disabled={scanning}/>
+            </div>
           </div>
-        ))}
-        <div className="photo-add-btn">
-          <span>📷</span>
-          <span className="photo-add-label">Add photo</span>
-          <input type="file" accept="image/*" multiple onChange={e=>{stageScanPhotos(e.target.files);e.target.value="";}} disabled={scanning}/>
-        </div>
-      </div>
-
-      {stagedImgs.length>0&&!result&&(
-        <button className="btn btn-primary" style={{width:"100%",marginBottom:12}} onClick={runScan} disabled={scanning}>
-          {scanning?<><span className="loading-spin"/> Analyzing…</>:`Analyze ${stagedImgs.length} photo${stagedImgs.length>1?"s":""}`}
-        </button>
+          {stagedImgs.length>0&&!result&&(
+            <button className="btn btn-primary" style={{width:"100%",marginBottom:12}} onClick={runScan} disabled={scanning}>
+              {scanning?<><span className="loading-spin"/> Analyzing…</>:`Analyze ${stagedImgs.length} photo${stagedImgs.length>1?"s":""}`}
+            </button>
+          )}
+        </>
       )}
 
-      {result&&(
+      {/* ── BARCODE MODE ── */}
+      {mode==="barcode"&&!barcodeResult&&(
         <div>
-          <div className={`scan-verdict ${result.verdict}`}>
-            <div className={`verdict-badge ${result.verdict}`}>
-              <span style={{fontSize:17}}>{result.verdict_emoji}</span>
-              {result.verdict==="yes"?"Good for you":result.verdict==="caution"?"Use with caution":"Avoid this one"}
-              {result.product_name&&<span style={{opacity:.6,fontWeight:"normal",fontSize:9}}> — {result.product_name}</span>}
+          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>
+            Point your camera at any barcode — the app reads the number, looks it up in the global food database, then tells you if it's safe for your kidneys.
+          </p>
+          {/* Camera capture */}
+          <label style={{display:"block",marginBottom:12}}>
+            <div style={{border:"2px dashed var(--border)",borderRadius:12,padding:20,textAlign:"center",background:"white",cursor:"pointer"}}
+              onMouseOver={e=>e.currentTarget.style.borderColor="var(--green2)"}
+              onMouseOut={e=>e.currentTarget.style.borderColor="var(--border)"}>
+              {barcodeScanning
+                ?<><div style={{fontSize:24,marginBottom:6}}>🔍</div><div style={{fontSize:11,color:"var(--ink3)"}}>Reading barcode…</div></>
+                :<><div style={{fontSize:32,marginBottom:6}}>🔲</div><div style={{fontSize:13,color:"var(--green)",fontWeight:500,marginBottom:4}}>Tap to scan barcode</div><div style={{fontSize:10,color:"var(--ink3)"}}>Opens your camera — point at the barcode</div></>
+              }
             </div>
-            {result.headline&&<div style={{fontSize:12,fontWeight:500,marginBottom:7}}>{result.headline}</div>}
-            {Object.keys(result.key_nutrients||{}).length>0&&(
-              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
-                {Object.entries(result.key_nutrients).map(([k,v])=><span key={k} style={{background:"rgba(0,0,0,.06)",padding:"2px 8px",borderRadius:20,fontSize:10}}>{k}: {v}</span>)}
-              </div>
-            )}
-            <div className="verdict-body">{result.reasoning}</div>
-            {result.watch_out&&<div style={{marginTop:7,padding:"6px 10px",background:"rgba(0,0,0,.05)",borderRadius:6,fontSize:11,color:"var(--terra)"}}>⚠ {result.watch_out}</div>}
-            {result.better_alternative&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}><strong>Better option:</strong> {result.better_alternative}</div>}
-            {result.serving_advice&&<div style={{marginTop:6,fontSize:11,color:"var(--ink3)",fontStyle:"italic"}}>{result.serving_advice}</div>}
-          </div>
-          <div style={{marginTop:11,display:"flex",gap:7,flexWrap:"wrap"}}>
-            <button className="btn btn-primary" onClick={handleSave}>Save to {destination}</button>
-            <button className="btn btn-outline" onClick={reset}>Scan another</button>
-            <button className="btn btn-outline" onClick={()=>setResult(null)}>Re-analyze</button>
+            <input type="file" accept="image/*" capture="environment" style={{display:"none"}}
+              onChange={e=>{if(e.target.files[0])handleBarcodePhoto(e.target.files[0]);e.target.value="";}}
+              disabled={barcodeScanning}/>
+          </label>
+          {/* Manual entry fallback */}
+          <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Or type barcode number:</div>
+          <div style={{display:"flex",gap:7}}>
+            <input className="text-input" style={{flex:1}} type="number" placeholder="e.g. 0123456789012"
+              value={manualBarcode} onChange={e=>setManualBarcode(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleManualBarcode()}/>
+            <button className="btn btn-primary" onClick={handleManualBarcode} disabled={barcodeScanning||manualBarcode.length<8}>
+              {barcodeScanning?<span className="loading-spin"/>:"Look up"}
+            </button>
           </div>
         </div>
+      )}
+
+      {/* ── RESULT (both modes) ── */}
+      {activeResult&&(
+        activeResult.error?(
+          <div style={{background:"var(--terra2)",border:"1px solid var(--terra)",borderRadius:10,padding:13,fontSize:11,color:"var(--terra)",lineHeight:1.6}}>
+            ⚠️ {activeResult.error}
+            <div style={{marginTop:8}}><button className="btn btn-outline btn-sm" onClick={resetAll}>Try again</button></div>
+          </div>
+        ):(
+          <div>
+            {/* Barcode product header */}
+            {mode==="barcode"&&(
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:10,background:"white",border:"1px solid var(--border)",borderRadius:10,padding:11}}>
+                {activeResult.image&&<img src={activeResult.image} alt="" style={{width:52,height:52,objectFit:"contain",borderRadius:6,border:"1px solid var(--border)"}}/>}
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,color:"var(--ink)",fontWeight:500}}>{activeResult.product_name}</div>
+                  {activeResult.brand&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>{activeResult.brand}</div>}
+                  {activeResult.serving&&<div style={{fontSize:10,color:"var(--ink3)"}}>Serving: {activeResult.serving}</div>}
+                  <div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>#{activeResult.barcode}</div>
+                </div>
+              </div>
+            )}
+            {/* Nutrient pills */}
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+              {activeResult.calories>0&&<span className="macro-tag">{activeResult.calories} kcal</span>}
+              {activeResult.sodium>0&&<span className={`macro-tag ${activeResult.sodium>300?"warn":""}`}>Na {activeResult.sodium}mg</span>}
+              {activeResult.calcium>0&&<span className="macro-tag hi">Ca {activeResult.calcium}mg</span>}
+              {activeResult.protein>0&&<span className="macro-tag">{activeResult.protein}g prot</span>}
+              {activeResult.potassium>0&&<span className="macro-tag">K {activeResult.potassium}mg</span>}
+              {activeResult.fiber>0&&<span className="macro-tag">{activeResult.fiber}g fiber</span>}
+            </div>
+            {/* Verdict */}
+            <div className={`scan-verdict ${activeResult.verdict}`}>
+              <div className={`verdict-badge ${activeResult.verdict}`}>
+                <span style={{fontSize:17}}>{activeResult.verdict_emoji}</span>
+                {activeResult.verdict==="yes"?"Good for you":activeResult.verdict==="caution"?"Use with caution":"Avoid this one"}
+              </div>
+              {activeResult.headline&&<div style={{fontSize:12,fontWeight:500,marginBottom:7}}>{activeResult.headline}</div>}
+              <div className="verdict-body">{activeResult.reasoning}</div>
+              {activeResult.watch_out&&<div style={{marginTop:7,padding:"6px 10px",background:"rgba(0,0,0,.05)",borderRadius:6,fontSize:11,color:"var(--terra)"}}>⚠ {activeResult.watch_out}</div>}
+              {(activeResult.better_alternative||activeResult.serving_advice)&&<div style={{marginTop:7,padding:"8px 11px",background:"var(--green3)",borderRadius:6,fontSize:11,color:"var(--green)"}}>
+                {activeResult.better_alternative&&<div><strong>Better option:</strong> {activeResult.better_alternative}</div>}
+                {activeResult.serving_advice&&<div style={{marginTop:3,fontStyle:"italic"}}>{activeResult.serving_advice}</div>}
+              </div>}
+            </div>
+            <div style={{marginTop:11,display:"flex",gap:7,flexWrap:"wrap"}}>
+              <button className="btn btn-primary" onClick={handleSave}>Save to {destination}</button>
+              <button className="btn btn-outline" onClick={resetAll}>Scan another</button>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
 }
+
 
 // ─── MEDICAL TAB ─────────────────────────────────────────────────────────────
 function MedicalTab({medical,setMedical}){
@@ -1637,7 +1784,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.2</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.3</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
