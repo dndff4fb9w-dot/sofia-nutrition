@@ -154,7 +154,7 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
     }
   }
   const todayEx=exLogs&&exLogs.length?exLogs.map(e=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return a?`${a.name} ${e.duration}min${e.distance?" ("+e.distance+" "+e.distanceUnit+")":""}`:""}).filter(Boolean).join(", "):"none";
-  async function handleVoiceCommand(transcript){
+  async function handleVoiceCommand(transcript,voiceImgs){
     if(!transcript.trim())return;
     setVoiceWorking(true);setVoiceResult(null);
     var parsed=await parseVoiceCommand(transcript,profile,exLogs);
@@ -225,6 +225,12 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
     if(parsed.skin_note){
       localStorage.setItem("sn_skin-note-"+todayKey(),JSON.stringify(parsed.skin_note));
       actions.push("✨ Skin note saved");
+    }
+    // If photos were included, analyze them too
+    if(voiceImgs&&voiceImgs.length>0){
+      var photoPrompt=transcript||"Analyze these food photos and tell me what you see with approximate portions.";
+      var photoReply=await callClaudeWithImages(voiceImgs,photoPrompt,"You are a health coach. Analyze food images and give nutrient estimates for the items shown.");
+      if(photoReply)actions.push("📷 "+photoReply.slice(0,200));
     }
     setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
     setVoiceWorking(false);
@@ -803,100 +809,154 @@ async function parseVoiceCommand(transcript, profile, exLogs){
   }catch(e){return{};}
 }
 
-function VoiceMicButton({onResult,onPhotos}){
+function VoiceMicButton({onResult}){
   const[active,setActive]=useState(false);
   const[transcript,setTranscript]=useState("");
+  const[previews,setPreviews]=useState([]);
+  const[staged,setStaged]=useState([]);
   const recRef=useRef(null);
   const accumRef=useRef("");
-  function start(){
+  const goRef=useRef(false);
+
+  function startRec(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){alert("Voice not supported — use the text box below instead.");return;}
-    accumRef.current="";setTranscript("");
+    if(!SR)return;
     var rec=new SR();
-    rec.lang="en-US";
-    rec.continuous=true;
-    rec.interimResults=false;
+    rec.lang="en-US";rec.continuous=true;rec.interimResults=false;
     rec.onresult=function(e){
-      var t="";
       for(var i=e.resultIndex;i<e.results.length;i++){
-        if(e.results[i].isFinal)t+=e.results[i][0].transcript+" ";
+        if(e.results[i].isFinal){
+          accumRef.current+=(accumRef.current?" ":"")+e.results[i][0].transcript;
+        }
       }
-      if(t){accumRef.current+=t;setTranscript(accumRef.current.trim());}
+      setTranscript(accumRef.current);
     };
-    rec.onerror=function(e){if(e.error!=="no-speech")console.warn("Speech:",e.error);};
-    rec.onend=function(){if(recRef.current===rec)try{rec.start();}catch(e){}};
-    rec.start();recRef.current=rec;setActive(true);
+    rec.onerror=function(e){if(e.error!=="no-speech")console.warn("mic:",e.error);};
+    rec.onend=function(){
+      if(goRef.current){
+        try{rec.start();}catch(err){
+          setTimeout(function(){if(goRef.current)startRec();},300);
+        }
+      }
+    };
+    try{rec.start();recRef.current=rec;}catch(e){console.warn(e);}
   }
-  function stop(){
+
+  function toggleMic(){
+    if(active){
+      goRef.current=false;
+      var r=recRef.current;recRef.current=null;
+      if(r)try{r.stop();}catch(e){}
+      setActive(false);
+    } else {
+      accumRef.current=transcript?transcript+" ":"";
+      goRef.current=true;
+      setActive(true);
+      startRec();
+    }
+  }
+
+  function addPhotos(files){
+    Array.from(files).forEach(function(f){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var full=e.target.result;
+        setPreviews(function(p){return[...p,full];});
+        setStaged(function(p){return[...p,{b64:full.split(",")[1],mediaType:f.type||"image/jpeg"}];});
+      };
+      reader.readAsDataURL(f);
+    });
+  }
+
+  function send(){
+    var msg=transcript.trim();
+    if(!msg&&staged.length===0)return;
+    onResult(msg,staged.length>0?staged:null);
+    setTranscript("");accumRef.current="";setStaged([]);setPreviews([]);
+    goRef.current=false;
     var r=recRef.current;recRef.current=null;
     if(r)try{r.stop();}catch(e){}
     setActive(false);
   }
-  function submit(){if(transcript.trim()){onResult(transcript.trim());setTranscript("");accumRef.current="";}else if(accumRef.current.trim()){onResult(accumRef.current.trim());setTranscript("");accumRef.current="";}}
+
   return(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"8px 0"}}>
-      <button onClick={active?stop:start}
-        style={{width:72,height:72,borderRadius:"50%",border:"none",cursor:"pointer",
-          background:active?"var(--terra)":"var(--green)",color:"white",fontSize:30,
-          boxShadow:"0 4px 12px rgba(44,74,62,.3)",transition:"all .2s"}}>
-        {active?"🔴":"🎙"}
-      </button>
-      <div style={{fontSize:11,color:active?"var(--terra)":"var(--ink3)"}}>
-        {active?"Listening… tap to stop":"Tap to speak"}
-      </div>
-      {transcript&&(
-        <div style={{width:"100%"}}>
-          <div style={{fontSize:11,color:"var(--ink)",background:"var(--cream2)",
-            borderRadius:8,padding:"8px 10px",marginBottom:6,lineHeight:1.5}}>
-            {transcript}
+    <div style={{width:"100%"}}>
+      {/* Mic row */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+        <button onClick={toggleMic}
+          style={{width:56,height:56,borderRadius:"50%",border:"none",cursor:"pointer",flexShrink:0,
+            background:active?"var(--terra)":"var(--green)",color:"white",fontSize:24,
+            boxShadow:active?"0 0 0 8px rgba(184,92,56,.15)":"0 3px 10px rgba(44,74,62,.25)",transition:"all .2s"}}>
+          {active?"🔴":"🎙"}
+        </button>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:500,color:active?"var(--terra)":"var(--green)"}}>
+            {active?"Listening — keep talking…":"Tap mic to start"}
           </div>
-          <button className="btn btn-primary" style={{width:"100%"}} onClick={submit}>
-            Send this
-          </button>
-          <button className="btn btn-outline btn-sm" style={{width:"100%",marginTop:4}}
-            onClick={function(){setTranscript("");}}>
-            Try again
-          </button>
+          <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>
+            {active?"Tap 🔴 when done — say everything at once":"Food · water · exercise · sleep"}
+          </div>
+        </div>
+      </div>
+
+      {/* Photo thumbnails */}
+      {previews.length>0&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}>
+          {previews.map(function(p,i){return(
+            <div key={i} style={{position:"relative"}}>
+              <img src={p} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"2px solid var(--green2)"}}/>
+              <button onClick={function(){
+                  setPreviews(function(x){return x.filter(function(_,j){return j!==i;});});
+                  setStaged(function(x){return x.filter(function(_,j){return j!==i;});});
+                }}
+                style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",
+                  background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontSize:9,padding:0}}>×</button>
+            </div>
+          );})}
+          <span style={{fontSize:10,color:"var(--green)"}}>{previews.length} photo{previews.length>1?"s":""}</span>
         </div>
       )}
-      {!transcript&&(
-        <>
-          <div style={{fontSize:10,color:"var(--ink3)"}}>or type below</div>
-          <textarea
-            style={{width:"100%",minHeight:60,padding:"8px 10px",borderRadius:8,
-              border:"1px solid var(--border)",fontSize:11,resize:"none",fontFamily:"inherit"}}
-            placeholder="Type your message here if voice is not working…"
-            onKeyDown={function(e){
-              if(e.key==="Enter"&&!e.shiftKey&&e.target.value.trim()){
-                e.preventDefault();onResult(e.target.value);e.target.value="";
-              }
-            }}/>
-          <div style={{fontSize:10,color:"var(--ink3)"}}>or send a photo</div>
-          <div style={{display:"flex",gap:8,width:"100%"}}>
-            <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",
-              gap:5,cursor:"pointer",padding:"8px 10px",border:"1px solid var(--border)",
-              borderRadius:12,background:"var(--cream2)",position:"relative"}}>
-              <span style={{fontSize:16}}>📷</span>
-              <span style={{fontSize:11,color:"var(--ink3)"}}>Take photo</span>
-              <input type="file" accept="image/*" capture="environment"
-                style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-                onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
-            </label>
-            <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",
-              gap:5,cursor:"pointer",padding:"8px 10px",border:"1px solid var(--border)",
-              borderRadius:12,background:"var(--cream2)",position:"relative"}}>
-              <span style={{fontSize:16}}>🖼</span>
-              <span style={{fontSize:11,color:"var(--ink3)"}}>Choose photos</span>
-              <input type="file" accept="image/*" multiple
-                style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-                onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
-            </label>
-          </div>
-        </>
-      )}
+
+      {/* Transcript */}
+      <textarea
+        value={transcript}
+        onChange={function(e){setTranscript(e.target.value);accumRef.current=e.target.value;}}
+        style={{width:"100%",minHeight:52,padding:"8px 10px",borderRadius:8,resize:"none",fontFamily:"inherit",
+          border:"1px solid "+(transcript||active?"var(--green2)":"var(--border)"),
+          fontSize:11,lineHeight:1.5,marginBottom:8,
+          background:active?"#f0f7f4":"var(--cream2)"}}
+        placeholder={active?"Your words appear here as you speak…":"Or type your message here…"}
+      />
+
+      {/* Photo + Send buttons */}
+      <div style={{display:"flex",gap:6}}>
+        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+          padding:"8px 0",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",
+          background:"var(--cream2)",position:"relative",fontSize:11,color:"var(--ink3)"}}>
+          📷 Take photo
+          <input type="file" accept="image/*" capture="environment"
+            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+            onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
+        </label>
+        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+          padding:"8px 0",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",
+          background:"var(--cream2)",position:"relative",fontSize:11,color:"var(--ink3)"}}>
+          🖼 Choose photos
+          <input type="file" accept="image/*" multiple
+            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+            onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
+        </label>
+        <button onClick={send}
+          disabled={!transcript.trim()&&staged.length===0}
+          className="btn btn-primary"
+          style={{flex:1,fontSize:11}}>
+          ✓ Log it
+        </button>
+      </div>
     </div>
   );
 }
+
 
 function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry,setExLogs,sleepLog,setSleepLog}){
   const[foodInput,setFoodInput]=useState("");
@@ -911,6 +971,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const[voiceOpen,setVoiceOpen]=useState(false);
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
+  const[expandedMeals,setExpandedMeals]=useState({breakfast:true,lunch:true,dinner:true,snack:true});
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -968,7 +1029,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     if(u.length===0) setCoachTip(null);
   }
 
-  async function handleVoiceCommand(transcript){
+  async function handleVoiceCommand(transcript,voiceImgs){
     if(!transcript.trim())return;
     setVoiceWorking(true);setVoiceResult(null);
     var parsed=await parseVoiceCommand(transcript,profile,exLogs);
@@ -1040,6 +1101,12 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
       localStorage.setItem("sn_skin-note-"+todayKey(),JSON.stringify(parsed.skin_note));
       actions.push("✨ Skin note saved");
     }
+    // If photos were included, analyze them too
+    if(voiceImgs&&voiceImgs.length>0){
+      var photoPrompt=transcript||"Analyze these food photos and tell me what you see with approximate portions.";
+      var photoReply=await callClaudeWithImages(voiceImgs,photoPrompt,"You are a health coach. Analyze food images and give nutrient estimates for the items shown.");
+      if(photoReply)actions.push("📷 "+photoReply.slice(0,200));
+    }
     setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
     setVoiceWorking(false);
   }
@@ -1072,7 +1139,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                 style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--ink3)"}}>×</button>
             </div>
             {!voiceWorking&&!voiceResult&&(
-              <VoiceMicButton onResult={handleVoiceCommand}
+              <VoiceMicButton onResult={function(txt,imgs){handleVoiceCommand(txt,imgs);}}
                 onPhotos={async function(files){
                   var imgs=[];
                   for(var i=0;i<files.length;i++){
@@ -1228,83 +1295,100 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
       </div>
 
       <p className="section-title" style={{marginTop:18}}>Today's food</p>
-      {foodLog.length===0?(<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>):(
-        <div className="food-log">
-          {foodLog.map(f=>{
-            const isEditing=editingId===f.id&&editEntry;
+      {foodLog.length===0
+        ?<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>
+        :(()=>{
+          const MEALS=[["breakfast","🌅"],["lunch","☀️"],["dinner","🌙"],["snack","🍎"]];
+          return MEALS.map(function(mv){
+            var mealId=mv[0];var mealEmoji=mv[1];
+            var items=foodLog.filter(function(f){return f.meal===mealId;});
+            if(!items.length)return null;
+            var mTotals=computeTotals(items);
+            var isOpen=expandedMeals&&expandedMeals[mealId]!==false;
             return(
-            <div className="food-entry" key={f.id} style={{flexDirection:"column",gap:6}}>
-              {/* Header row — always visible */}
-              <div style={{display:"flex",alignItems:"flex-start",gap:11,width:"100%"}}>
-                <div className="food-time"><div>{f.mealLabel||""}</div><div>{f.time}</div></div>
-                <div className="food-info" style={{flex:1}}>
-                  {isEditing?(
-                    /* EDIT MODE — textarea expands inside card */
-                    <EditNameArea
-                      value={editEntry.name}
-                      onChange={v=>setEditEntry({...editEntry,name:v})}
-                    />
-                  ):(
-                    <div className="food-name">{f.name}</div>
-                  )}
-                  {!isEditing&&(
-                    <>
-                      <div className="food-macros">
-                        {f.nutrients?.calories>0&&<span className="macro-tag">{f.nutrients.calories} kcal</span>}
-                        {f.nutrients?.sodium>0&&<span className={`macro-tag ${f.nutrients.sodium>400?"warn":""}`}>Na {f.nutrients.sodium}mg</span>}
-                        {f.nutrients?.calcium>0&&<span className="macro-tag">Ca {f.nutrients.calcium}mg</span>}
-                        {f.nutrients?.magnesium>0&&<span className="macro-tag hi">Mg {f.nutrients.magnesium}mg</span>}
-                        {f.nutrients?.protein>0&&<span className="macro-tag">{f.nutrients.protein}g prot</span>}
-                        {f.oxalate&&<span className={`ox-${f.oxalate}`}>ox {f.oxalate}</span>}
-                      </div>
-                      {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:4,fontStyle:"italic"}}>{f.notes}</div>}
-                    </>
-                  )}
+              <div key={mealId} style={{marginBottom:10,border:"1px solid var(--border)",borderRadius:12,overflow:"hidden",background:"white"}}>
+                {/* Meal header — tap to expand/collapse */}
+                <div onClick={function(){setExpandedMeals(function(p){var n={...p};n[mealId]=!isOpen;return n;});}}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",cursor:"pointer",
+                    background:isOpen?"var(--green3)":"white"}}>
+                  <span style={{fontSize:18}}>{mealEmoji}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:500,color:"var(--green)",textTransform:"capitalize"}}>{mealId}</div>
+                    <div style={{fontSize:10,color:"var(--ink3)",marginTop:1}}>
+                      {mTotals.calories} kcal · Na {mTotals.sodium}mg · Ca {mTotals.calcium}mg · {mTotals.protein}g prot · {items.length} item{items.length>1?"s":""}
+                    </div>
+                  </div>
+                  <span style={{fontSize:12,color:"var(--ink3)"}}>{isOpen?"▾":"▸"}</span>
                 </div>
-                <div style={{display:"flex",gap:2,flexShrink:0}}>
-                  {!isEditing&&<button className="food-edit" onClick={()=>{setEditingId(f.id);setEditEntry({...f,nutrients:{...f.nutrients}});}}>✏️</button>}
-                  <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
-                </div>
+                {/* Items - only shown when expanded */}
+                {isOpen&&(
+                  <div style={{borderTop:"1px solid var(--border)"}}>
+                    {items.map(function(f){
+                      var isEditing=editingId===f.id&&editEntry;
+                      return(
+                        <div key={f.id} style={{padding:"9px 13px",borderBottom:"1px solid var(--cream2)",display:"flex",flexDirection:"column",gap:4}}>
+                          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                            <div style={{fontSize:9,color:"var(--ink3)",minWidth:38,flexShrink:0}}>
+                              <div>{f.time}</div>
+                            </div>
+                            <div style={{flex:1}}>
+                              {isEditing
+                                ?<EditNameArea value={editEntry.name} onChange={function(v){setEditEntry({...editEntry,name:v});}}/>
+                                :<div style={{fontSize:12,color:"var(--ink)",marginBottom:3}}>{f.name}</div>
+                              }
+                              {!isEditing&&(
+                                <>
+                                  <div className="food-macros">
+                                    {f.nutrients?.calories>0&&<span className="macro-tag">{f.nutrients.calories} kcal</span>}
+                                    {f.nutrients?.sodium>0&&<span className={"macro-tag "+(f.nutrients.sodium>400?"warn":"")}> Na {f.nutrients.sodium}mg</span>}
+                                    {f.nutrients?.calcium>0&&<span className="macro-tag">Ca {f.nutrients.calcium}mg</span>}
+                                    {f.nutrients?.protein>0&&<span className="macro-tag">{f.nutrients.protein}g prot</span>}
+                                    {f.oxalate&&<span className={"ox-"+f.oxalate}>ox {f.oxalate}</span>}
+                                  </div>
+                                  {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic",marginTop:2}}>{f.notes}</div>}
+                                </>
+                              )}
+                              {isEditing&&(
+                                <div style={{marginTop:6}}>
+                                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
+                                    {[["calories","kcal"],["sodium","Na mg"],["calcium","Ca mg"],["protein","prot g"]].map(function(kl){
+                                      return(
+                                        <div key={kl[0]} style={{display:"flex",alignItems:"center",gap:4}}>
+                                          <span style={{fontSize:9,color:"var(--ink3)",minWidth:36}}>{kl[1]}</span>
+                                          <input type="number" className="text-input" style={{flex:1,padding:"3px 5px",fontSize:11}}
+                                            value={editEntry.nutrients[kl[0]]||0}
+                                            onChange={function(e){var k=kl[0];setEditEntry(function(prev){return{...prev,nutrients:{...prev.nutrients,[k]:Number(e.target.value)}};});}}/>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div style={{display:"flex",gap:5}}>
+                                    <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={function(){
+                                      var u=foodLog.map(function(x){return x.id===editingId?{...editEntry}:x;});
+                                      setFoodLog(u);store.set("food-log-"+todayKey(),u);setEditingId(null);setEditEntry(null);
+                                    }}>Save</button>
+                                    <button className="btn btn-outline btn-sm" onClick={function(){setEditingId(null);setEditEntry(null);}}>Cancel</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{display:"flex",gap:3,flexShrink:0}}>
+                              {!isEditing&&<button className="food-edit" onClick={function(){setEditingId(f.id);setEditEntry({...f,nutrients:{...f.nutrients}});}}>✏️</button>}
+                              <button className="food-delete" onClick={function(){removeFood(f.id);}}>×</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              {/* Nutrient editors — only in edit mode */}
-              {isEditing&&(
-                <div style={{paddingLeft:43}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
-                    {[["calories","kcal"],["sodium","Na mg"],["calcium","Ca mg"],["protein","prot g"],["magnesium","Mg mg"],["potassium","K mg"]].map(([key,label])=>(
-                      <div key={key} style={{display:"flex",alignItems:"center",gap:4}}>
-                        <span style={{fontSize:9,color:"var(--ink3)",minWidth:36}}>{label}</span>
-                        <input type="number" className="text-input" style={{flex:1,padding:"4px 6px",fontSize:11}}
-                          value={editEntry.nutrients[key]||0}
-                          onChange={e=>setEditEntry({...editEntry,nutrients:{...editEntry.nutrients,[key]:Number(e.target.value)}})}/>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{display:"flex",gap:4,marginBottom:6}}>
-                    {["low","med","high"].map(ox=>(
-                      <button key={ox} onClick={()=>setEditEntry({...editEntry,oxalate:ox})}
-                        style={{flex:1,padding:"4px",fontSize:9,border:"1px solid",borderRadius:6,cursor:"pointer",fontFamily:"monospace",
-                          background:editEntry.oxalate===ox?"var(--green)":"white",
-                          color:editEntry.oxalate===ox?"white":"var(--ink3)",
-                          borderColor:editEntry.oxalate===ox?"var(--green)":"var(--border)"}}>ox {ox}</button>
-                    ))}
-                  </div>
-                  <div style={{display:"flex",gap:5}}>
-                    <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
-                      const u=foodLog.map(x=>x.id===editingId?{...editEntry}:x);
-                      setFoodLog(u);store.set("food-log-"+todayKey(),u);setEditingId(null);setEditEntry(null);
-                    }}>Save</button>
-                    <button className="btn btn-outline btn-sm" onClick={()=>{setEditingId(null);setEditEntry(null);}}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
             );
-          })}
-        </div>
-      )}
+          });
+        })()
+      }
 
-      {/* FIX #2: Only show coachTip if there's food logged */}
-      {coachTip && foodLog.length>0 &&(
+      coachTip && foodLog.length>0 &&(
         <div style={{background:"var(--green3)",border:"1px solid var(--green2)",borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:11,color:"var(--green)",lineHeight:1.6}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green2)",marginBottom:4}}>Coach tip</div>
           {coachTip}
@@ -1672,7 +1756,21 @@ function MedsTab({master,setMaster}){
       {showAdd&&(
         <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:10}}>Add by photo (optional)</div>
-          {!scanPreview?(<div className="photo-zone" style={{marginBottom:12}}><input type="file" accept="image/*" onChange={e=>handlePhotoScan(e.target.files[0])}/><div style={{fontSize:24,marginBottom:5}}>📸</div><div style={{fontSize:11,color:"var(--ink3)"}}>Photograph label — Claude pre-fills the form</div></div>)
+          {!scanPreview?(<div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".06em"}}>Photograph label to auto-fill — take front + back for best results</div>
+              <div style={{display:"flex",gap:7}}>
+                <label style={{flex:1,border:"2px dashed var(--border)",borderRadius:10,padding:"12px 8px",textAlign:"center",cursor:"pointer",background:"white",position:"relative"}}>
+                  <div style={{fontSize:20,marginBottom:3}}>📷</div>
+                  <div style={{fontSize:10,color:"var(--green)"}}>Take photo</div>
+                  <input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={e=>{if(e.target.files[0])handlePhotoScan(e.target.files[0]);e.target.value="";}}/>
+                </label>
+                <label style={{flex:1,border:"2px dashed var(--border)",borderRadius:10,padding:"12px 8px",textAlign:"center",cursor:"pointer",background:"white",position:"relative"}}>
+                  <div style={{fontSize:20,marginBottom:3}}>🖼</div>
+                  <div style={{fontSize:10,color:"var(--green)"}}>Choose photos</div>
+                  <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={e=>{if(e.target.files[0])handlePhotoScan(e.target.files[0]);e.target.value="";}}/>
+                </label>
+              </div>
+            </div>)
           :(<div style={{marginBottom:10}}><img src={scanPreview} alt="" className="photo-preview" style={{marginBottom:6}}/>{scanning&&<div style={{textAlign:"center",padding:10,fontSize:11,color:"var(--ink3)"}}><span className="loading-spin" style={{borderTopColor:"var(--green)"}}/> Reading…</div>}{scanResult?.notes&&<div style={{fontSize:11,color:"var(--terra)",margin:"6px 0",fontStyle:"italic"}}>{scanResult.notes}</div>}</div>)}
           <div style={{display:"flex",gap:7,marginBottom:7,flexWrap:"wrap"}}>
             <div style={{flex:2}}><div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:3}}>Name *</div><input className="text-input" style={{width:"100%"}} placeholder="e.g. Vitamin C" value={newItem.name} onChange={e=>setNewItem({...newItem,name:e.target.value})}/></div>
@@ -2319,17 +2417,13 @@ function PantryTab({pantry,setPantry}){
           <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
           <button className={"mic-btn "+(micOn?"listening":"idle")} onClick={micOn?stopMic:startMic}>{micOn?"🔴":"🎤"}</button>
           {/* FIX #1: Multiple photos for pantry */}
-          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
-            📷
-            <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-              onChange={async e=>{
-                const files=Array.from(e.target.files);
-                if(!files.length)return;
-                const imgs=await Promise.all(files.map(f=>compressImage(f)));
-                const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");
-                setName(raw.slice(0,80)||"Scanned product");
-                e.target.value="";
-              }}/>
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Take photo">
+            📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+              onChange={async e=>{if(!e.target.files.length)return;const imgs=await Promise.all(Array.from(e.target.files).map(f=>compressImage(f)));const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");setName(raw.slice(0,80)||"Scanned product");e.target.value="";}}/>
+          </label>
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Choose photos">
+            🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+              onChange={async e=>{if(!e.target.files.length)return;const imgs=await Promise.all(Array.from(e.target.files).map(f=>compressImage(f)));const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");setName(raw.slice(0,80)||"Scanned product");e.target.value="";}}/>
           </label>
         </div>
         <div className="input-row">
@@ -2371,6 +2465,7 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const[voiceOpen,setVoiceOpen]=useState(false);
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
+  const[expandedMeals,setExpandedMeals]=useState({breakfast:true,lunch:true,dinner:true,snack:true});
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
@@ -2443,9 +2538,13 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
         <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>{listening?"🔴":"🎤"}</button>
-        {/* Camera button */}
-        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
-          📷<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
+        {/* Camera — Take Photo */}
+        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Take photo">
+          📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
+        </label>
+        {/* Camera — Choose Photos (multiple) */}
+        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Choose photos">
+          🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
         </label>
         <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||(!input.trim()&&!stagedPhotos.length)}>{loading?<span className="loading-spin"/>:"Send"}</button>
       </div>
@@ -3466,7 +3565,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.15</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.16</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry} setExLogs={setExLogs} sleepLog={sleepLog} setSleepLog={setSleepLog}/>}
