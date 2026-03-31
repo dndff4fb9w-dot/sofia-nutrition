@@ -171,7 +171,7 @@ Exercise today: ${todayEx}
 Protein target today: ${proteinTarget}g (based on exercise intensity)
 Calorie target today: ${calTarget} kcal
 Progesterone today: ${progToday?"YES — progesterone day":daysUntil!==null?`No — ${daysUntil} days until next cycle`:"No active cycle"}
-Water: ${water} / ${profile.targets.water_glasses} glasses
+Water: ${water} glasses of ${profile.targets.water_glass_oz||8}oz = ${Math.round(water*(profile.targets.water_glass_oz||8)*29.5/1000*10)/10}L / target ${profile.targets.water_glasses} glasses
 Supplements taken: ${takenNames.join(", ")||"none checked"}
 Synergy gaps: ${gaps.join(" | ")||"all met"}
 
@@ -744,7 +744,14 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
       </div>
 
       <div className="water-track">
-        <div style={{minWidth:60}}><div className="water-label">Water</div><div className="water-count">{water}<span style={{fontSize:12,color:"var(--green2)"}}> / {targets.water_glasses}</span></div></div>
+        <div style={{minWidth:72}}>
+          <div className="water-label">Water</div>
+          <div className="water-count">
+            {(water*(targets.water_glass_oz||8)/128).toFixed(1)}<span style={{fontSize:10,color:"var(--green2)"}}>L</span>
+          </div>
+          <div style={{fontSize:9,color:"var(--green2)"}}>{water} / {targets.water_glasses} glasses</div>
+          <div style={{fontSize:8,color:"var(--ink3)",marginTop:1}}>{targets.water_glass_oz||8}oz each</div>
+        </div>
         <div className="water-glasses">
           {Array.from({length:targets.water_glasses}).map((_,i)=>(
             <button key={i} className={`water-glass ${i<water?"filled":""}`} onClick={()=>{const n=i<water?i:i+1;setWater(n);store.set("water-"+todayKey(),n);}}/>
@@ -1263,33 +1270,162 @@ function MedsTab({master,setMaster}){
 
 // ─── SCAN TAB — FIX #8 #9: multi-photo, skin destination, destination selector ─
 // Look up barcode in Open Food Facts, then get Claude verdict
-async function lookupBarcode(barcode){
+// USDA key — fetched securely from Netlify function at startup
+let USDA_API_KEY = "DEMO_KEY";
+async function loadUSDAKey(){
+  try{
+    const r=await fetch("/.netlify/functions/claude",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"get_usda_key"})
+    });
+    const d=await r.json();
+    if(d.key)USDA_API_KEY=d.key;
+  }catch(e){console.warn("USDA key fetch failed, using DEMO_KEY");}
+}
+
+// Nutritionix credentials — add when going universal (paid plan)
+const NUTRITIONIX_APP_ID = "YOUR_APP_ID";
+const NUTRITIONIX_APP_KEY = "YOUR_APP_KEY";
+
+function usdaConfigured(){ return USDA_API_KEY !== "YOUR_USDA_KEY"; }
+function nutritionixConfigured(){ return NUTRITIONIX_APP_ID !== "YOUR_APP_ID" && NUTRITIONIX_APP_KEY !== "YOUR_APP_KEY"; }
+
+// 1. USDA FoodData Central (primary — US government, very accurate for US branded products)
+async function lookupUSDA(barcode){
+  try{
+    const key=usdaConfigured()?USDA_API_KEY:"DEMO_KEY";
+    const r=await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${barcode}&dataType=Branded&api_key=${key}&pageSize=1`);
+    if(!r.ok)return null;
+    const d=await r.json();
+    const item=d.foods&&d.foods[0];
+    if(!item)return null;
+    // Extract nutrients by nutrient number
+    const nuts=item.foodNutrients||[];
+    const get=(id)=>{const n=nuts.find(x=>x.nutrientId===id||x.nutrientNumber===String(id));return n?n.value||0:0;};
+    // USDA nutrient IDs: 1008=calories, 1093=sodium, 1087=calcium, 1003=protein, 1092=potassium, 1090=magnesium, 1004=fat, 1079=fiber
+    const servG=parseFloat(item.servingSize)||100;
+    const f=servG/100;
+    return{
+      product_name:item.description||"Unknown product",
+      brand:item.brandOwner||item.brandName||"",
+      barcode,
+      serving:item.servingSize?(item.servingSize+(item.servingSizeUnit||"g")):"",
+      calories:Math.round(get(1008)*f)||Math.round(get("208")*f),
+      sodium:Math.round(get(1093)*f)||Math.round(get("307")*f),
+      calcium:Math.round(get(1087)*f)||Math.round(get("301")*f),
+      protein:Math.round((get(1003)||get("203"))*f*10)/10,
+      potassium:Math.round((get(1092)||get("306"))*f),
+      magnesium:Math.round((get(1090)||get("304"))*f),
+      fat:Math.round((get(1004)||get("204"))*f*10)/10,
+      fiber:Math.round((get(1079)||get("291"))*f*10)/10,
+      ingredients:item.ingredients||"",
+      image:null,
+      source:"USDA FoodData",
+      per:"serving",
+    };
+  }catch(e){return null;}
+}
+
+// 2. Nutritionix (future — add keys when going universal)
+async function lookupNutritionix(barcode){
+  if(!nutritionixConfigured())return null;
+  try{
+    const r=await fetch(`https://trackapi.nutritionix.com/v2/search/item?upc=${barcode}`,{
+      headers:{"x-app-id":NUTRITIONIX_APP_ID,"x-app-key":NUTRITIONIX_APP_KEY,"Content-Type":"application/json"}
+    });
+    if(!r.ok)return null;
+    const d=await r.json();
+    const item=d.foods&&d.foods[0];
+    if(!item)return null;
+    return{
+      product_name:item.food_name||"Unknown product",
+      brand:item.brand_name||"",
+      barcode,
+      serving:item.serving_unit?(item.serving_qty+" "+item.serving_unit):"",
+      calories:Math.round(item.nf_calories||0),
+      sodium:Math.round(item.nf_sodium||0),
+      calcium:Math.round(item.nf_calcium_mg||0),
+      protein:Math.round((item.nf_protein||0)*10)/10,
+      potassium:Math.round(item.nf_potassium||0),
+      magnesium:Math.round(item.nf_magnesium||0),
+      fat:Math.round((item.nf_total_fat||0)*10)/10,
+      fiber:Math.round((item.nf_dietary_fiber||0)*10)/10,
+      ingredients:item.nf_ingredient_statement||"",
+      image:item.photo&&item.photo.thumb||null,
+      source:"Nutritionix",
+      per:"serving",
+    };
+  }catch(e){return null;}
+}
+
+// Open Food Facts fallback — fixes nutrient parsing for per-serving accuracy
+async function lookupOpenFoodFacts(barcode){
   try{
     const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
     const d=await r.json();
-    if(d.status!==1||!d.product)return{error:"Product not found in database (barcode: "+barcode+")"};
+    if(d.status!==1||!d.product)return null;
     const p=d.product;
     const n=p.nutriments||{};
-    const per=n["energy-kcal_serving"]?"serving":"100g";
-    const factor=per==="serving"?1:1; // per serving when available
+    // Serving size for per-100g conversion
+    const servingG=parseFloat(p.serving_quantity)||240;
+    const f=servingG/100;
+    // Helper: try _serving first, then _100g * factor, minerals stored in g so *1000
+    const mg=(sk,pk)=>n[sk]!=null&&n[sk]>0?Math.round(n[sk]*1000):Math.round((n[pk]||0)*f*1000);
+    const g=(sk,pk)=>n[sk]!=null&&n[sk]>0?Math.round(n[sk]*10)/10:Math.round((n[pk]||0)*f*10)/10;
+    const kcal=n["energy-kcal_serving"]||Math.round((n["energy-kcal_100g"]||0)*f);
+    const prot=n["proteins_serving"]!=null&&n["proteins_serving"]>0?Math.round(n["proteins_serving"]*10)/10:Math.round((n["proteins_100g"]||0)*f*10)/10;
+    const cal_mg=n["calcium_serving"]!=null&&n["calcium_serving"]>0?Math.round(n["calcium_serving"]*1000):Math.round((n["calcium_100g"]||0)*f*1000);
+    const sod=n["sodium_serving"]!=null&&n["sodium_serving"]>0?Math.round(n["sodium_serving"]*1000):Math.round((n["sodium_100g"]||0)*f*1000);
     return{
       product_name:p.product_name||p.product_name_en||"Unknown product",
       brand:p.brands||"",
       barcode,
       serving:p.serving_size||"",
-      sodium:Math.round((n.sodium_serving||n["sodium_100g"]||0)*1000), // g to mg
-      calcium:Math.round(n.calcium_serving||n["calcium_100g"]||0),
-      calories:Math.round(n["energy-kcal_serving"]||n["energy-kcal_100g"]||0),
-      protein:Math.round((n.protein_serving||n["proteins_100g"]||0)*10)/10,
-      potassium:Math.round((n.potassium_serving||n["potassium_100g"]||0)*1000),
-      magnesium:Math.round((n.magnesium_serving||n["magnesium_100g"]||0)*1000),
-      fat:Math.round((n.fat_serving||n["fat_100g"]||0)*10)/10,
-      fiber:Math.round((n.fiber_serving||n["fiber_100g"]||0)*10)/10,
+      calories:Math.round(kcal),
+      sodium:sod,
+      calcium:cal_mg,
+      protein:prot,
+      potassium:mg("potassium_serving","potassium_100g"),
+      magnesium:mg("magnesium_serving","magnesium_100g"),
+      fat:g("fat_serving","fat_100g"),
+      fiber:g("fiber_serving","fiber_100g"),
       ingredients:p.ingredients_text_en||p.ingredients_text||"",
       image:p.image_front_small_url||null,
-      per,
+      source:"Open Food Facts",
+      per:"serving",
     };
-  }catch(e){return{error:"Lookup failed: "+e.message};}
+  }catch(e){return null;}
+}
+
+// Flag suspicious values — prompt user to verify with label photo
+function checkSuspiciousValues(product){
+  const warnings=[];
+  const name=(product.product_name||"").toLowerCase();
+  const isMilk=name.includes("milk")||name.includes("soy")||name.includes("oat")||name.includes("almond")||name.includes("kefir")||name.includes("yogurt");
+  const isMeat=name.includes("chicken")||name.includes("beef")||name.includes("fish")||name.includes("tuna")||name.includes("salmon");
+  if(isMilk&&product.calcium<50) warnings.push("Calcium seems low for a milk product — verify with label");
+  if(isMilk&&product.protein<2) warnings.push("Protein seems low — verify with label");
+  if(product.calories>0&&product.sodium===0&&!name.includes("water")) warnings.push("Sodium shows 0mg — may be missing from database");
+  if(product.calories===0&&product.protein===0) warnings.push("Nutrient data appears incomplete — use label photo for accuracy");
+  return warnings;
+}
+
+// Main lookup: USDA → Nutritionix → Open Food Facts
+async function lookupBarcode(barcode){
+  let product=null;
+  // 1. USDA FoodData Central (best for US products)
+  product=await lookupUSDA(barcode);
+  // 2. Nutritionix (when configured)
+  if(!product&&nutritionixConfigured()){
+    product=await lookupNutritionix(barcode);
+  }
+  // 3. Open Food Facts (global fallback)
+  if(!product){
+    product=await lookupOpenFoodFacts(barcode);
+  }
+  if(!product)return{error:"Product not found in any database. Try scanning the label photo instead."};
+  product.warnings=checkSuspiciousValues(product);
+  return product;
 }
 
 async function getBarcodeVerdict(product){
@@ -1500,6 +1636,24 @@ Return ONLY raw JSON:
               {activeResult.potassium>0&&<span className="macro-tag">K {activeResult.potassium}mg</span>}
               {activeResult.fiber>0&&<span className="macro-tag">{activeResult.fiber}g fiber</span>}
             </div>
+            {/* Data source + warnings */}
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+              {activeResult.source&&<span style={{fontSize:9,background:"var(--green3)",color:"var(--green2)",padding:"2px 8px",borderRadius:20,letterSpacing:".06em"}}>
+                Source: {activeResult.source}
+              </span>}
+              {activeResult.warnings&&activeResult.warnings.length>0&&(
+                <span style={{fontSize:9,background:"var(--gold2)",color:"#946200",padding:"2px 8px",borderRadius:20}}>
+                  ⚠️ Verify values with label
+                </span>
+              )}
+            </div>
+            {activeResult.warnings&&activeResult.warnings.length>0&&(
+              <div style={{background:"var(--gold2)",border:"1px solid #e6b800",borderRadius:8,padding:"8px 11px",marginBottom:10}}>
+                <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"#946200",marginBottom:4}}>Database values may be incomplete</div>
+                {activeResult.warnings.map((w,i)=><div key={i} style={{fontSize:10,color:"var(--ink)",marginBottom:2}}>• {w}</div>)}
+                <div style={{fontSize:10,color:"var(--ink3)",marginTop:5,fontStyle:"italic"}}>For exact values, use Photo/Label scan with your product photo.</div>
+              </div>
+            )}
             {/* Verdict */}
             <div className={`scan-verdict ${activeResult.verdict}`}>
               <div className={`verdict-badge ${activeResult.verdict}`}>
@@ -1803,7 +1957,7 @@ function ProfileTab({profile,setProfile}){
       <div className="profile-section">
         <div className="profile-section-title">Daily targets</div>
         <div className="target-grid">
-          {[{key:"water_glasses",label:"Water",unit:"glasses"},{key:"sodium_mg",label:"Sodium max",unit:"mg"},{key:"calcium_mg",label:"Calcium",unit:"mg"},{key:"magnesium_mg",label:"Magnesium",unit:"mg"},{key:"potassium_mg",label:"Potassium",unit:"mg"},{key:"calories",label:"Base calories",unit:"kcal"},{key:"protein_g",label:"Base protein",unit:"g"}].map(t=>(
+          {[{key:"water_glasses",label:"Water glasses",unit:"glasses"},{key:"water_glass_oz",label:"Glass size",unit:"oz"},{key:"sodium_mg",label:"Sodium max",unit:"mg"},{key:"calcium_mg",label:"Calcium",unit:"mg"},{key:"magnesium_mg",label:"Magnesium",unit:"mg"},{key:"potassium_mg",label:"Potassium",unit:"mg"},{key:"calories",label:"Base calories",unit:"kcal"},{key:"protein_g",label:"Base protein",unit:"g"}].map(t=>(
             <div className="target-card" key={t.key}><div className="target-label">{t.label}</div><div style={{display:"flex",alignItems:"baseline",gap:5}}><input className="target-input" type="number" value={profile.targets[t.key]} onChange={e=>updateTarget(t.key,e.target.value)}/><span style={{fontSize:10,color:"var(--ink3)"}}>{t.unit}</span></div></div>
           ))}
         </div>
@@ -2434,7 +2588,7 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
 const DEFAULT_PROFILE={
   name:"Sofia",
   // FIX #10: protein_g 65 not 55
-  weight_kg:44,height_cm:160,targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
+  weight_kg:44,height_cm:160,targets:{water_glasses:12,water_glass_oz:8,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
   conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
   restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian"],
   notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always. PESCATARIAN — no meat.",
@@ -2461,6 +2615,7 @@ function App(){
 
   useEffect(()=>{
     async function load(){
+      await loadUSDAKey();
       try{
         const ob=await store.get("onboarded");if(ob)setOnboarded(true);
         const p=await store.get("profile");if(p)setProfile(p);
@@ -2527,7 +2682,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.6</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.7</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
