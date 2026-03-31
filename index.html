@@ -805,20 +805,29 @@ async function parseVoiceCommand(transcript, profile, exLogs){
 
 function VoiceMicButton({onResult,onPhotos}){
   const[active,setActive]=useState(false);
+  const[transcript,setTranscript]=useState("");
   const recRef=useRef(null);
+  const gotRef=useRef(false);
   function start(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){alert("Use Safari on iPhone for voice input.");return;}
+    if(!SR){alert("Voice not supported — type your message below instead.");return;}
+    gotRef.current=false;
     var rec=new SR();
     rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
-    rec.onresult=function(e){var t=e.results[0][0].transcript;setActive(false);onResult(t);};
-    rec.onerror=function(){setActive(false);};
+    rec.onresult=function(e){
+      gotRef.current=true;
+      var t=Array.from(e.results).map(function(r){return r[0].transcript;}).join(" ");
+      setTranscript(t);
+      setActive(false);
+    };
+    rec.onerror=function(e){console.warn("Speech error",e.error);setActive(false);};
     rec.onend=function(){setActive(false);};
-    rec.start();recRef.current=rec;setActive(true);
+    rec.start();recRef.current=rec;setActive(true);setTranscript("");
   }
   function stop(){if(recRef.current)recRef.current.stop();setActive(false);}
+  function submit(){if(transcript.trim()){onResult(transcript);setTranscript("");}}
   return(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"8px 0"}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"8px 0"}}>
       <button onClick={active?stop:start}
         style={{width:72,height:72,borderRadius:"50%",border:"none",cursor:"pointer",
           background:active?"var(--terra)":"var(--green)",color:"white",fontSize:30,
@@ -828,16 +837,56 @@ function VoiceMicButton({onResult,onPhotos}){
       <div style={{fontSize:11,color:active?"var(--terra)":"var(--ink3)"}}>
         {active?"Listening… tap to stop":"Tap to speak"}
       </div>
-      <div style={{fontSize:10,color:"var(--ink3)"}}>or</div>
-      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
-        padding:"8px 14px",border:"1px solid var(--border)",borderRadius:20,
-        background:"var(--cream2)",position:"relative"}}>
-        <span style={{fontSize:16}}>📷</span>
-        <span style={{fontSize:11,color:"var(--ink3)"}}>Send a photo</span>
-        <input type="file" accept="image/*" multiple
-          style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-          onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
-      </label>
+      {transcript&&(
+        <div style={{width:"100%"}}>
+          <div style={{fontSize:11,color:"var(--ink)",background:"var(--cream2)",
+            borderRadius:8,padding:"8px 10px",marginBottom:6,lineHeight:1.5}}>
+            {transcript}
+          </div>
+          <button className="btn btn-primary" style={{width:"100%"}} onClick={submit}>
+            Send this
+          </button>
+          <button className="btn btn-outline btn-sm" style={{width:"100%",marginTop:4}}
+            onClick={function(){setTranscript("");}}>
+            Try again
+          </button>
+        </div>
+      )}
+      {!transcript&&(
+        <>
+          <div style={{fontSize:10,color:"var(--ink3)"}}>or type below</div>
+          <textarea
+            style={{width:"100%",minHeight:60,padding:"8px 10px",borderRadius:8,
+              border:"1px solid var(--border)",fontSize:11,resize:"none",fontFamily:"inherit"}}
+            placeholder="Type your message here if voice is not working…"
+            onKeyDown={function(e){
+              if(e.key==="Enter"&&!e.shiftKey&&e.target.value.trim()){
+                e.preventDefault();onResult(e.target.value);e.target.value="";
+              }
+            }}/>
+          <div style={{fontSize:10,color:"var(--ink3)"}}>or send a photo</div>
+          <div style={{display:"flex",gap:8,width:"100%"}}>
+            <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",
+              gap:5,cursor:"pointer",padding:"8px 10px",border:"1px solid var(--border)",
+              borderRadius:12,background:"var(--cream2)",position:"relative"}}>
+              <span style={{fontSize:16}}>📷</span>
+              <span style={{fontSize:11,color:"var(--ink3)"}}>Take photo</span>
+              <input type="file" accept="image/*" capture="environment"
+                style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+                onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
+            </label>
+            <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",
+              gap:5,cursor:"pointer",padding:"8px 10px",border:"1px solid var(--border)",
+              borderRadius:12,background:"var(--cream2)",position:"relative"}}>
+              <span style={{fontSize:16}}>🖼</span>
+              <span style={{fontSize:11,color:"var(--ink3)"}}>Choose photos</span>
+              <input type="file" accept="image/*" multiple
+                style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+                onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
+            </label>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2617,10 +2666,48 @@ function OnboardingFlow({onComplete,existingProfile}){
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Date of birth *</div>
-                <input className="text-input" style={{width:"100%"}} type="date" value={dob} onChange={e=>setDob(e.target.value)}/>
-                {dob&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>
-                  Age: {(()=>{const b=new Date(dob);const t=new Date();return t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);})()}
-                </div>}
+                <div style={{display:"flex",gap:6}}>
+                  <select className="text-input" style={{flex:2}}
+                    value={dob?parseInt(dob.split("-")[1]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      var m=e.target.value.padStart(2,"0");
+                      setDob((p[0]||new Date().getFullYear())+"-"+m+"-"+(p[2]||"01"));
+                    }}>
+                    <option value="">Month</option>
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map(function(mn,i){
+                      return <option key={i+1} value={i+1}>{mn}</option>;
+                    })}
+                  </select>
+                  <select className="text-input" style={{flex:1}}
+                    value={dob?parseInt(dob.split("-")[2]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      var d=e.target.value.padStart(2,"0");
+                      setDob((p[0]||new Date().getFullYear())+"-"+(p[1]||"01")+"-"+d);
+                    }}>
+                    <option value="">Day</option>
+                    {Array.from({length:31},function(_,i){return i+1;}).map(function(d){
+                      return <option key={d} value={d}>{d}</option>;
+                    })}
+                  </select>
+                  <select className="text-input" style={{flex:2}}
+                    value={dob?parseInt(dob.split("-")[0]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      setDob(e.target.value+"-"+(p[1]||"01")+"-"+(p[2]||"01"));
+                    }}>
+                    <option value="">Year</option>
+                    {Array.from({length:100},function(_,i){return new Date().getFullYear()-i;}).map(function(y){
+                      return <option key={y} value={y}>{y}</option>;
+                    })}
+                  </select>
+                </div>
+                {dob&&dob.split("-")[0]&&dob.split("-")[1]&&dob.split("-")[2]&&(function(){
+                  var b=new Date(dob);var t=new Date();
+                  var age=t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);
+                  return <div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>Age: {age}</div>;
+                })()}
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Weight</div>
