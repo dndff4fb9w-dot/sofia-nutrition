@@ -1189,6 +1189,58 @@ function InjectionsTab({injections,setInjections}){
   );
 }
 
+
+// ─── MedItemCard — editable supplement/medication card ───────────────────────
+function MedItemCard({item,onTogglePaused,onRemove,onSave}){
+  const[editing,setEditing]=useState(false);
+  const[editItem,setEditItem]=useState(null);
+
+  function startEdit(){setEditItem({...item});setEditing(true);}
+  function saveEdit(){onSave(editItem);setEditing(false);}
+
+  return(
+    <div className={`master-item ${item.category==="medication"?"medication":""}`} style={{opacity:item.paused?.5:1,marginBottom:8}}>
+      {!editing?(
+        <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+          <div style={{flex:1}}>
+            <div className="master-name">{item.name}{item.paused&&<span style={{fontSize:9,color:"var(--terra)",marginLeft:8}}>PAUSED</span>}</div>
+            {item.dose&&<div className="master-dose">{item.dose} · {item.time}</div>}
+            {item.notes&&<div className={`master-notes ${item.notes.includes("⚠")?"warn":""}`}>{item.notes}</div>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
+            <button className="food-edit" onClick={startEdit}>✏️</button>
+            <button className="btn btn-outline btn-sm" onClick={()=>onTogglePaused(item.id)}>{item.paused?"Resume":"Pause"}</button>
+            <button className="btn btn-sm" style={{background:"var(--terra2)",color:"var(--terra)",border:"none"}} onClick={()=>onRemove(item.id)}>Remove</button>
+          </div>
+        </div>
+      ):(
+        <div>
+          <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>Edit</div>
+          <input className="text-input" style={{width:"100%",marginBottom:6}} placeholder="Name" value={editItem.name} onChange={e=>setEditItem({...editItem,name:e.target.value})}/>
+          <input className="text-input" style={{width:"100%",marginBottom:6}} placeholder="Dose (e.g. 500mg)" value={editItem.dose||""} onChange={e=>setEditItem({...editItem,dose:e.target.value})}/>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <select className="text-input" style={{flex:1}} value={editItem.category} onChange={e=>setEditItem({...editItem,category:e.target.value})}>
+              <option value="supplement">Supplement</option>
+              <option value="medication">Medication</option>
+            </select>
+            <select className="text-input" style={{flex:1}} value={editItem.time} onChange={e=>setEditItem({...editItem,time:e.target.value})}>
+              <option value="morning">Morning</option>
+              <option value="with meals">With meals</option>
+              <option value="night">Night</option>
+              <option value="as needed">As needed</option>
+            </select>
+          </div>
+          <input className="text-input" style={{width:"100%",marginBottom:8}} placeholder="Notes" value={editItem.notes||""} onChange={e=>setEditItem({...editItem,notes:e.target.value})}/>
+          <div style={{display:"flex",gap:6}}>
+            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={saveEdit}>Save</button>
+            <button className="btn btn-outline btn-sm" onClick={()=>setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MEDS TAB ────────────────────────────────────────────────────────────────
 function MedsTab({master,setMaster}){
   const[showAdd,setShowAdd]=useState(false);
@@ -1236,33 +1288,11 @@ function MedsTab({master,setMaster}){
       )}
       <div className="cat-label">Supplements ({supps.length})</div>
       {supps.map(item=>(
-        <div key={item.id} className="master-item" style={{opacity:item.paused?.5:1}}>
-          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            <div style={{flex:1}}>
-              <div className="master-name">{item.name}{item.paused&&<span style={{fontSize:9,color:"var(--terra)",marginLeft:8}}>PAUSED</span>}</div>
-              {item.dose&&<div className="master-dose">{item.dose} · {item.time}</div>}
-              {item.synergies?.length>0&&<div style={{fontSize:10,color:"var(--green2)",marginTop:3}}>⚡ {item.synergies.map(s=>s.label).join(" · ")}</div>}
-              {item.notes&&<div className="master-notes">{item.notes}</div>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
-              <button className="btn btn-outline btn-sm" onClick={()=>togglePaused(item.id)}>{item.paused?"Resume":"Pause"}</button>
-              <button className="btn btn-sm" style={{background:"var(--terra2)",color:"var(--terra)",border:"none"}} onClick={()=>removeItem(item.id)}>Remove</button>
-            </div>
-          </div>
-        </div>
+        <MedItemCard key={item.id} item={item} onTogglePaused={togglePaused} onRemove={removeItem} onSave={(updated)=>{const u=master.map(m=>m.id===updated.id?updated:m);setMaster(u);store.set("master",u);}}/>
       ))}
       <div className="cat-label" style={{marginTop:16}}>Medications ({meds.length}) <span className="cat-badge">as needed</span></div>
       {meds.map(item=>(
-        <div key={item.id} className="master-item medication">
-          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            <div style={{flex:1}}>
-              <div className="master-name">{item.name}</div>
-              {item.dose&&<div className="master-dose">{item.dose} · {item.time}</div>}
-              {item.notes&&<div className={`master-notes ${item.notes.includes("⚠")?"warn":""}`}>{item.notes}</div>}
-            </div>
-            <button className="btn btn-sm" style={{background:"var(--terra2)",color:"var(--terra)",border:"none",flexShrink:0}} onClick={()=>removeItem(item.id)}>Remove</button>
-          </div>
-        </div>
+        <MedItemCard key={item.id} item={item} onTogglePaused={togglePaused} onRemove={removeItem} onSave={(updated)=>{const u=master.map(m=>m.id===updated.id?updated:m);setMaster(u);store.set("master",u);}}/>
       ))}
     </div>
   );
@@ -2024,12 +2054,12 @@ const COMMON_GOALS=[
 ];
 const BLOOD_TYPES=["A+","A-","B+","B-","AB+","AB-","O+","O-","Unknown"];
 
-function OnboardingFlow({onComplete}){
+function OnboardingFlow({onComplete,existingProfile}){
   const[step,setStep]=useState(1);
   const TOTAL=9;
   // Step 2
   const[firstName,setFirstName]=useState("");
-  const[age,setAge]=useState("");
+  const[dob,setDob]=useState("");
   const[weightKg,setWeightKg]=useState("");
   const[heightCm,setHeightCm]=useState("");
   const[bloodType,setBloodType]=useState("");
@@ -2058,21 +2088,38 @@ function OnboardingFlow({onComplete}){
   // Step 9 — T&C
   const[tcAccepted,setTcAccepted]=useState(false);
 
+  // Pre-fill from existing profile when re-doing setup
+  useEffect(()=>{
+    if(!existingProfile)return;
+    if(existingProfile.name)setFirstName(existingProfile.name);
+    if(existingProfile.dob)setDob(existingProfile.dob);
+    if(existingProfile.weight_kg)setWeightKg(String(existingProfile.weight_kg));
+    if(existingProfile.height_cm)setHeightCm(String(existingProfile.height_cm));
+    if(existingProfile.blood_type)setBloodType(existingProfile.blood_type);
+    if(existingProfile.conditions)setConditions(existingProfile.conditions);
+    if(existingProfile.restrictions)setDiets(existingProfile.restrictions);
+    if(existingProfile.goals)setGoals(existingProfile.goals||[]);
+  },[]);
+
   function toggleArr(arr,setArr,val){
     setArr(arr.includes(val)?arr.filter(x=>x!==val):[...arr,val]);
   }
 
   function finish(){
-    // Build profile from onboarding data
     const wKg=weightUnit==="kg"?parseFloat(weightKg):Math.round(parseFloat(weightKg)/2.205*10)/10;
     const hCm=heightUnit==="cm"?parseFloat(heightCm):Math.round(parseFloat(heightCm)*2.54);
+    // Calculate age from DOB
+    let calcAge=0;
+    if(dob){const b=new Date(dob);const today=new Date();calcAge=today.getFullYear()-b.getFullYear()-((today.getMonth()<b.getMonth()||(today.getMonth()===b.getMonth()&&today.getDate()<b.getDate()))?1:0);}
+    // Preserve existing targets if re-doing setup
+    const existingTargets=existingProfile?.targets||{water_glasses:12,water_glass_oz:8,sodium_mg:1500,calcium_mg:1300,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320};
     const profile={
-      name:firstName,age:parseInt(age)||0,
+      name:firstName,dob,age:calcAge,
       weight_kg:wKg||44,height_cm:hCm||160,
       blood_type:bloodType,
-      targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
+      targets:existingTargets,
       conditions,restrictions:diets,goals,
-      notes:"",onboarded:true
+      notes:existingProfile?.notes||"",onboarded:true
     };
     store.set("profile",profile);
     store.set("onboarded","true");
@@ -2117,8 +2164,11 @@ function OnboardingFlow({onComplete}){
                 <input className="text-input" style={{width:"100%"}} placeholder="Your name" value={firstName} onChange={e=>setFirstName(e.target.value)}/>
               </div>
               <div>
-                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Age</div>
-                <input className="text-input" style={{width:"100%"}} type="number" placeholder="e.g. 54" value={age} onChange={e=>setAge(e.target.value)}/>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Date of birth *</div>
+                <input className="text-input" style={{width:"100%"}} type="date" value={dob} onChange={e=>setDob(e.target.value)}/>
+                {dob&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>
+                  Age: {(()=>{const b=new Date(dob);const t=new Date();return t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);})()}
+                </div>}
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Weight</div>
@@ -2843,7 +2893,7 @@ function App(){
   }
 
   if(!loaded)return null;
-  if(!onboarded)return <OnboardingFlow onComplete={(p)=>{setProfile(p);setOnboarded(true);}}/>;
+  if(!onboarded)return <OnboardingFlow onComplete={(p)=>{setProfile(p);setOnboarded(true);}} existingProfile={profile}/>;
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   // FIX #5: Shortened tab labels to prevent overlap
@@ -2868,7 +2918,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.9</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.10</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
