@@ -154,6 +154,82 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
     }
   }
   const todayEx=exLogs&&exLogs.length?exLogs.map(e=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return a?`${a.name} ${e.duration}min${e.distance?" ("+e.distance+" "+e.distanceUnit+")":""}`:""}).filter(Boolean).join(", "):"none";
+  async function handleVoiceCommand(transcript){
+    if(!transcript.trim())return;
+    setVoiceWorking(true);setVoiceResult(null);
+    var parsed=await parseVoiceCommand(transcript,profile,exLogs);
+    var actions=[];
+    var newFL=[...foodLog];
+    if(parsed.foods&&parsed.foods.length){
+      for(var fi=0;fi<parsed.foods.length;fi++){
+        var fd=parsed.foods[fi];
+        var res=await parseFood(fd.name,pantry,newFL);
+        if(res&&res.name&&!res.error){
+          var ml={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"};
+          newFL.push({id:Date.now()+Math.random(),name:res.name,
+            meal:fd.meal||"snack",mealLabel:ml[fd.meal]||"🍽",
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            nutrients:{sodium:res.sodium||0,calcium:res.calcium||0,calories:res.calories||0,
+              protein:res.protein||0,potassium:res.potassium||0,magnesium:res.magnesium||0},
+            oxalate:res.oxalate||"low",notes:res.notes||""});
+          actions.push("🍽 "+res.name+" — "+res.calories+"kcal, Na "+res.sodium+"mg, Ca "+res.calcium+"mg");
+        }
+      }
+      setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);
+    }
+    var newW=water;
+    if(parsed.water_glasses&&parsed.water_glasses>0){
+      newW=Math.min(profile.targets?.water_glasses||12,water+Math.round(parsed.water_glasses));
+      actions.push("💧 Water +"+Math.round(parsed.water_glasses)+" glasses → "+newW+" total");
+    }
+    if(parsed.water_liters&&parsed.water_liters>0){
+      var oz=profile.targets?.water_glass_oz||8;
+      var gl=Math.round(parsed.water_liters*1000/(oz*29.5));
+      newW=Math.min(profile.targets?.water_glasses||12,water+gl);
+      actions.push("💧 Water +"+parsed.water_liters+"L → "+newW+" glasses total");
+    }
+    if(newW!==water){setWater(newW);store.set("water-"+todayKey(),newW);}
+    if(parsed.exercise&&parsed.exercise.length&&setExLogs){
+      var newEx=[...exLogs];
+      for(var ei=0;ei<parsed.exercise.length;ei++){
+        var ex=parsed.exercise[ei];
+        var act=ACTIVITIES.find(function(a){return a.id===ex.type;})||
+                ACTIVITIES.find(function(a){return a.name.toLowerCase().indexOf((ex.type||"").toLowerCase())>=0;});
+        if(act){
+          var ee={id:Date.now()+Math.random(),activityId:act.id,
+            duration:ex.duration_min||act.duration,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})};
+          if(ex.distance){ee.distance=ex.distance;ee.distanceUnit=ex.distance_unit||"blocks";}
+          newEx.push(ee);
+          actions.push("💪 "+act.name+" "+ee.duration+"min"+(ex.distance?" "+ex.distance+" "+(ex.distance_unit||"blocks"):""));
+        }
+      }
+      setExLogs(newEx);store.set("ex-"+todayKey(),newEx);
+    }
+    if(parsed.sleep&&(parsed.sleep.bedtime||parsed.sleep.hours)&&setSleepLog){
+      var sh=parsed.sleep.hours||null;
+      if(!sh&&parsed.sleep.bedtime&&parsed.sleep.waketime){
+        var bp=parsed.sleep.bedtime.split(":");var wp=parsed.sleep.waketime.split(":");
+        if(bp.length===2&&wp.length===2){
+          var sm=(parseInt(wp[0])*60+parseInt(wp[1]))-(parseInt(bp[0])*60+parseInt(bp[1]));
+          if(sm<0)sm+=1440;sh=Math.round(sm/60*10)/10;
+        }
+      }
+      var sl={id:Date.now(),date:todayKey(),bedtime:parsed.sleep.bedtime||"",
+        waketime:parsed.sleep.waketime||"",hours:sh,quality:0,
+        notes:parsed.sleep.notes||"",aidTaken:false};
+      var nsl=[...(sleepLog||[]),sl];
+      setSleepLog(nsl);store.set("sleep-log",nsl);
+      actions.push("🌙 Sleep: "+(sh||"?")+"h logged");
+    }
+    if(parsed.skin_note){
+      localStorage.setItem("sn_skin-note-"+todayKey(),JSON.stringify(parsed.skin_note));
+      actions.push("✨ Skin note saved");
+    }
+    setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
+    setVoiceWorking(false);
+  }
+
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
 
@@ -715,7 +791,58 @@ function EditNameArea({value, onChange}){
   );
 }
 
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
+
+// ─── VOICE COMMAND CENTER ────────────────────────────────────────────────────
+async function parseVoiceCommand(transcript, profile, exLogs){
+  var hr = new Date().getHours();
+  var meal = hr<11?"breakfast":hr<14?"lunch":hr<17?"snack":"dinner";
+  var sys = "Parse this voice message from a health app user. Return ONLY raw JSON with no markdown: {foods:[{name:string,meal:string}],water_glasses:number|null,water_liters:number|null,exercise:[{type:string,duration_min:number,distance:number|null,distance_unit:string|null}],question:string|null,sleep:{bedtime:string|null,waketime:string|null,hours:number|null,notes:string|null}|null,skin_note:string|null}. Exercise types: pilates-reformer,pilates-mat,barre,walking,red-light,arm-bands. Default meal is "+meal+". Only include fields actually mentioned.";
+  try{
+    var raw=await callClaude([{role:"user",content:"Parse: "+transcript}],sys);
+    return safeParseJSON(raw)||{};
+  }catch(e){return{};}
+}
+
+function VoiceMicButton({onResult,onPhotos}){
+  const[active,setActive]=useState(false);
+  const recRef=useRef(null);
+  function start(){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Use Safari on iPhone for voice input.");return;}
+    var rec=new SR();
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=function(e){var t=e.results[0][0].transcript;setActive(false);onResult(t);};
+    rec.onerror=function(){setActive(false);};
+    rec.onend=function(){setActive(false);};
+    rec.start();recRef.current=rec;setActive(true);
+  }
+  function stop(){if(recRef.current)recRef.current.stop();setActive(false);}
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"8px 0"}}>
+      <button onClick={active?stop:start}
+        style={{width:72,height:72,borderRadius:"50%",border:"none",cursor:"pointer",
+          background:active?"var(--terra)":"var(--green)",color:"white",fontSize:30,
+          boxShadow:"0 4px 12px rgba(44,74,62,.3)",transition:"all .2s"}}>
+        {active?"🔴":"🎙"}
+      </button>
+      <div style={{fontSize:11,color:active?"var(--terra)":"var(--ink3)"}}>
+        {active?"Listening… tap to stop":"Tap to speak"}
+      </div>
+      <div style={{fontSize:10,color:"var(--ink3)"}}>or</div>
+      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",
+        padding:"8px 14px",border:"1px solid var(--border)",borderRadius:20,
+        background:"var(--cream2)",position:"relative"}}>
+        <span style={{fontSize:16}}>📷</span>
+        <span style={{fontSize:11,color:"var(--ink3)"}}>Send a photo</span>
+        <input type="file" accept="image/*" multiple
+          style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+          onChange={function(e){if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
+      </label>
+    </div>
+  );
+}
+
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry,setExLogs,sleepLog,setSleepLog}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
@@ -725,6 +852,9 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const[editEntry,setEditEntry]=useState(null);
   // FIX #1 & #3: Staged photos for combined entry
   const[stagedPhotos,setStagedPhotos]=useState([]);
+  const[voiceOpen,setVoiceOpen]=useState(false);
+  const[voiceWorking,setVoiceWorking]=useState(false);
+  const[voiceResult,setVoiceResult]=useState(null);
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -782,6 +912,82 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     if(u.length===0) setCoachTip(null);
   }
 
+  async function handleVoiceCommand(transcript){
+    if(!transcript.trim())return;
+    setVoiceWorking(true);setVoiceResult(null);
+    var parsed=await parseVoiceCommand(transcript,profile,exLogs);
+    var actions=[];
+    var newFL=[...foodLog];
+    if(parsed.foods&&parsed.foods.length){
+      for(var fi=0;fi<parsed.foods.length;fi++){
+        var fd=parsed.foods[fi];
+        var res=await parseFood(fd.name,pantry,newFL);
+        if(res&&res.name&&!res.error){
+          var ml={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"};
+          newFL.push({id:Date.now()+Math.random(),name:res.name,
+            meal:fd.meal||"snack",mealLabel:ml[fd.meal]||"🍽",
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            nutrients:{sodium:res.sodium||0,calcium:res.calcium||0,calories:res.calories||0,
+              protein:res.protein||0,potassium:res.potassium||0,magnesium:res.magnesium||0},
+            oxalate:res.oxalate||"low",notes:res.notes||""});
+          actions.push("🍽 "+res.name+" — "+res.calories+"kcal, Na "+res.sodium+"mg, Ca "+res.calcium+"mg");
+        }
+      }
+      setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);
+    }
+    var newW=water;
+    if(parsed.water_glasses&&parsed.water_glasses>0){
+      newW=Math.min(profile.targets?.water_glasses||12,water+Math.round(parsed.water_glasses));
+      actions.push("💧 Water +"+Math.round(parsed.water_glasses)+" glasses → "+newW+" total");
+    }
+    if(parsed.water_liters&&parsed.water_liters>0){
+      var oz=profile.targets?.water_glass_oz||8;
+      var gl=Math.round(parsed.water_liters*1000/(oz*29.5));
+      newW=Math.min(profile.targets?.water_glasses||12,water+gl);
+      actions.push("💧 Water +"+parsed.water_liters+"L → "+newW+" glasses total");
+    }
+    if(newW!==water){setWater(newW);store.set("water-"+todayKey(),newW);}
+    if(parsed.exercise&&parsed.exercise.length&&setExLogs){
+      var newEx=[...exLogs];
+      for(var ei=0;ei<parsed.exercise.length;ei++){
+        var ex=parsed.exercise[ei];
+        var act=ACTIVITIES.find(function(a){return a.id===ex.type;})||
+                ACTIVITIES.find(function(a){return a.name.toLowerCase().indexOf((ex.type||"").toLowerCase())>=0;});
+        if(act){
+          var ee={id:Date.now()+Math.random(),activityId:act.id,
+            duration:ex.duration_min||act.duration,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})};
+          if(ex.distance){ee.distance=ex.distance;ee.distanceUnit=ex.distance_unit||"blocks";}
+          newEx.push(ee);
+          actions.push("💪 "+act.name+" "+ee.duration+"min"+(ex.distance?" "+ex.distance+" "+(ex.distance_unit||"blocks"):""));
+        }
+      }
+      setExLogs(newEx);store.set("ex-"+todayKey(),newEx);
+    }
+    if(parsed.sleep&&(parsed.sleep.bedtime||parsed.sleep.hours)&&setSleepLog){
+      var sh=parsed.sleep.hours||null;
+      if(!sh&&parsed.sleep.bedtime&&parsed.sleep.waketime){
+        var bp=parsed.sleep.bedtime.split(":");var wp=parsed.sleep.waketime.split(":");
+        if(bp.length===2&&wp.length===2){
+          var sm=(parseInt(wp[0])*60+parseInt(wp[1]))-(parseInt(bp[0])*60+parseInt(bp[1]));
+          if(sm<0)sm+=1440;sh=Math.round(sm/60*10)/10;
+        }
+      }
+      var sl={id:Date.now(),date:todayKey(),bedtime:parsed.sleep.bedtime||"",
+        waketime:parsed.sleep.waketime||"",hours:sh,quality:0,
+        notes:parsed.sleep.notes||"",aidTaken:false};
+      var nsl=[...(sleepLog||[]),sl];
+      setSleepLog(nsl);store.set("sleep-log",nsl);
+      actions.push("🌙 Sleep: "+(sh||"?")+"h logged");
+    }
+    if(parsed.skin_note){
+      localStorage.setItem("sn_skin-note-"+todayKey(),JSON.stringify(parsed.skin_note));
+      actions.push("✨ Skin note saved");
+    }
+    setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
+    setVoiceWorking(false);
+  }
+
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
   const todayActivity=exLogs&&exLogs.length?exLogs.map(e=>ACTIVITIES.find(a=>a.id===e.activityId)?.name).filter(Boolean).join(", "):null;
@@ -791,6 +997,82 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
 
   return(
     <div className="section">
+      <div style={{marginBottom:14}}>
+        {!voiceOpen
+          ?<button onClick={function(){setVoiceOpen(true);}}
+            style={{width:"100%",padding:"14px",borderRadius:16,border:"2px solid var(--green)",
+              background:"var(--green3)",cursor:"pointer",display:"flex",alignItems:"center",
+              justifyContent:"center",gap:12,fontFamily:"'DM Mono',monospace"}}>
+            <span style={{fontSize:28}}>🎙</span>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:12,color:"var(--green)",fontWeight:500}}>Talk to log everything</div>
+              <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>Food, water, exercise, sleep — just speak</div>
+            </div>
+          </button>
+          :<div style={{background:"white",border:"2px solid var(--green)",borderRadius:16,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <span style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green)"}}>🎙 Voice Log</span>
+              <button onClick={function(){setVoiceOpen(false);setVoiceResult(null);}}
+                style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--ink3)"}}>×</button>
+            </div>
+            {!voiceWorking&&!voiceResult&&(
+              <VoiceMicButton onResult={handleVoiceCommand}
+                onPhotos={async function(files){
+                  var imgs=[];
+                  for(var i=0;i<files.length;i++){
+                    var c=await compressImage(files[i],1200,0.85);
+                    imgs.push({b64:c.b64,mediaType:files[i].type||"image/jpeg"});
+                  }
+                  var prompt="User sent "+imgs.length+" photo(s) of food or a menu. Analyze what you see and whether it fits a low-sodium, low-oxalate, pescatarian diet.";
+                  setVoiceWorking(true);
+                  var reply=await callClaudeWithImages(imgs,prompt,"You are a health coach. Be specific and actionable.");
+                  setVoiceResult({actions:[],question:null,photoReply:reply,transcript:"[Photo]"});
+                  setVoiceWorking(false);
+                }}/>
+            )}
+            {voiceWorking&&(
+              <div style={{textAlign:"center",padding:"16px 0",color:"var(--ink3)",fontSize:11}}>
+                <span className="loading-spin" style={{borderTopColor:"var(--green)",marginRight:8}}/>
+                Processing…
+              </div>
+            )}
+            {voiceResult&&(
+              <div>
+                {voiceResult.transcript&&voiceResult.transcript!=="[Photo]"&&(
+                  <div style={{fontSize:11,color:"var(--ink3)",fontStyle:"italic",marginBottom:8,
+                    padding:"6px 10px",background:"var(--cream2)",borderRadius:8}}>
+                    {voiceResult.transcript}
+                  </div>
+                )}
+                {voiceResult.photoReply&&(
+                  <div style={{fontSize:11,color:"var(--ink)",lineHeight:1.7,marginBottom:8,
+                    padding:"8px 10px",background:"var(--green3)",borderRadius:8}}>
+                    {voiceResult.photoReply}
+                  </div>
+                )}
+                {voiceResult.actions&&voiceResult.actions.length>0&&(
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",
+                      color:"var(--green)",marginBottom:5}}>Logged:</div>
+                    {voiceResult.actions.map(function(a,i){
+                      return <div key={i} style={{fontSize:11,color:"var(--ink)",
+                        padding:"3px 0",borderBottom:"1px solid var(--cream2)"}}>{a}</div>;
+                    })}
+                  </div>
+                )}
+                {voiceResult.question&&(
+                  <div style={{fontSize:11,color:"var(--ink3)",fontStyle:"italic",marginBottom:6}}>
+                    Question noted — ask in Coach tab for full answer.
+                  </div>
+                )}
+                <button className="btn btn-primary btn-sm" style={{width:"100%",marginTop:4}}
+                  onClick={function(){setVoiceResult(null);}}>Tap to speak again</button>
+              </div>
+            )}
+          </div>
+        }
+      </div>
+
       <div className="day-ribbon">
         <div><div className="ribbon-label">Calories</div><div className="ribbon-val">{totals.calories}<span style={{fontSize:13,opacity:.7}}> / {calTarget}</span></div></div>
         <div style={{textAlign:"center"}}><div className="ribbon-label">Sodium</div><div className="ribbon-val">{totals.sodium}<span style={{fontSize:13,opacity:.7}}>mg</span></div></div>
@@ -2030,6 +2312,9 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything — or send me a photo of a menu or plate!"}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const[stagedPhotos,setStagedPhotos]=useState([]);
+  const[voiceOpen,setVoiceOpen]=useState(false);
+  const[voiceWorking,setVoiceWorking]=useState(false);
+  const[voiceResult,setVoiceResult]=useState(null);
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
@@ -3087,10 +3372,10 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.13</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.15</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry} setExLogs={setExLogs} sleepLog={sleepLog} setSleepLog={setSleepLog}/>}
         {tab==="history"&&<HistoryTab sleepLog={sleepLog}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
