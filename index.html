@@ -2030,12 +2030,8 @@ function PantryTab({pantry,setPantry}){
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections}){
-  const[messages,setMessages]=useState(null);
-  useEffect(()=>{
-    const name=profile?.name||"there";
-    const conditions=(profile?.conditions||[]).join(", ")||"your conditions";
-    setMessages([{role:"assistant",content:`Hi ${name}! I have your full context — ${conditions}, all your medications, today's exercise, food log, sleep, and upcoming procedures. Everything is connected. Ask me anything.`}]);
-  },[]);
+  const initMsg=(p)=>{const name=p?.name||"there";const conditions=(p?.conditions||[]).join(", ")||"your conditions";return[{role:"assistant",content:`Hi ${name}! I have your full context — ${conditions}, all your medications, today's exercise, food log, sleep, and upcoming procedures. Everything is connected. Ask me anything.`}];};
+  const[messages,setMessages]=useState(()=>initMsg(profile));
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
@@ -2979,7 +2975,7 @@ function App(){
 
   useEffect(()=>{
     async function load(){
-      await loadUSDAKey();
+      loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         const ob=await store.get("onboarded");if(ob)setOnboarded(true);
         const p=await store.get("profile");if(p)setProfile(p);
@@ -2997,8 +2993,10 @@ function App(){
         const sl=await store.get("sleep-log");if(sl)setSleepLog(sl);
         setLoaded(true);
       }catch(e){console.warn(e);}
-      document.getElementById("splash").style.display="none";
-      document.getElementById("root").style.display="block";
+      finally{
+        document.getElementById("splash").style.display="none";
+        document.getElementById("root").style.display="block";
+      }
     }
     load();
     if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
