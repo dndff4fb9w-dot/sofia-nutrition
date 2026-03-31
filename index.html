@@ -154,6 +154,77 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
     }
   }
   const todayEx=exLogs&&exLogs.length?exLogs.map(e=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return a?`${a.name} ${e.duration}min${e.distance?" ("+e.distance+" "+e.distanceUnit+")":""}`:""}).filter(Boolean).join(", "):"none";
+  // Voice Command Center — processes natural speech across all tabs
+  async function handleVoiceCommand(transcript){
+    if(!transcript.trim())return;
+    setVoiceProcessing(true);setVoiceResult(null);
+    const parsed=await parseVoiceCommand(transcript,profile,foodLog,water,exLogs);
+    const actions=[];
+
+    // Process foods
+    if(parsed.foods&&parsed.foods.length){
+      for(const f of parsed.foods){
+        const result=await parseFood(f.name,pantry,foodLog);
+        if(result&&result.name&&!result.error){
+          const mealLabel={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"}[f.meal]||"🍽";
+          const entry={id:Date.now()+Math.random(),name:result.name,meal:f.meal||"snack",mealLabel,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,
+              protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},
+            oxalate:result.oxalate||"low",notes:result.notes};
+          foodLog=[...foodLog,entry];
+          actions.push("🍽 Logged: "+result.name+" (Na:"+result.sodium+"mg Ca:"+result.calcium+"mg "+result.calories+"kcal "+result.protein+"g prot)");
+        }
+      }
+      if(foodLog!==foodLog){setFoodLog(foodLog);store.set("food-log-"+todayKey(),foodLog);}
+      // Save updated foodLog
+      const newFL=[...foodLog];
+      setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);
+    }
+
+    // Process water
+    let newWater=water;
+    if(parsed.water_glasses){newWater=Math.min(profile.targets?.water_glasses||12,water+Math.round(parsed.water_glasses));actions.push("💧 Water: +"+Math.round(parsed.water_glasses)+" glasses (total: "+newWater+")");}
+    if(parsed.water_liters){const glasses=Math.round(parsed.water_liters*1000/((profile.targets?.water_glass_oz||8)*29.5));newWater=Math.min(profile.targets?.water_glasses||12,water+glasses);actions.push("💧 Water: +"+parsed.water_liters+"L = "+glasses+" glasses (total: "+newWater+")");}
+    if(newWater!==water){setWater(newWater);store.set("water-"+todayKey(),newWater);}
+
+    // Process exercise
+    if(parsed.exercise&&parsed.exercise.length){
+      const newEx=[...exLogs];
+      for(const ex of parsed.exercise){
+        const act=ACTIVITIES.find(a=>a.id===ex.type)||ACTIVITIES.find(a=>a.name.toLowerCase().includes(ex.type?.toLowerCase()||""));
+        if(act){
+          const entry={id:Date.now()+Math.random(),activityId:act.id,duration:ex.duration_min||act.duration,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            ...(ex.distance?{distance:ex.distance,distanceUnit:ex.distance_unit||"blocks"}:{})};
+          newEx.push(entry);
+          actions.push("💪 Logged: "+act.name+" "+entry.duration+"min"+(ex.distance?" "+ex.distance+" "+(ex.distance_unit||"blocks"):""));
+        }
+      }
+      if(newEx.length!==exLogs.length){setExLogs(newEx);store.set("ex-"+todayKey(),newEx);}
+    }
+
+    // Process sleep
+    if(parsed.sleep&&(parsed.sleep.bedtime||parsed.sleep.hours)){
+      const hours=parsed.sleep.hours||(parsed.sleep.bedtime&&parsed.sleep.waketime?
+        (()=>{const[bh,bm]=parsed.sleep.bedtime.split(":").map(Number);const[wh,wm]=parsed.sleep.waketime.split(":").map(Number);let m=(wh*60+wm)-(bh*60+bm);if(m<0)m+=1440;return Math.round(m/60*10)/10;})():null);
+      const entry={id:Date.now(),date:todayKey(),bedtime:parsed.sleep.bedtime||"",waketime:parsed.sleep.waketime||"",hours,quality:0,notes:parsed.sleep.notes||"",aidTaken:false};
+      const newSL=[...(sleepLog||[]),entry];
+      if(setSleepLog){setSleepLog(newSL);store.set("sleep-log",newSL);}
+      actions.push("🌙 Sleep logged: "+(hours||"?")+"h");
+    }
+
+    // Process skin note
+    if(parsed.skin_note){
+      const noteKey="sn_skin-note-"+todayKey();
+      localStorage.setItem(noteKey,JSON.stringify(parsed.skin_note));
+      actions.push("✨ Skin note saved: "+parsed.skin_note);
+    }
+
+    setVoiceResult({actions, question:parsed.question, summaryRequest:parsed.summary_request, transcript});
+    setVoiceProcessing(false);
+  }
+
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
 
@@ -715,7 +786,76 @@ function EditNameArea({value, onChange}){
   );
 }
 
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
+
+
+// ─── VoiceMicButton — big mic with photo option ───────────────────────────────
+function VoiceMicButton({onResult,onPhotos}){
+  const[listening,setListening]=useState(false);
+  const recRef=useRef(null);
+
+  function start(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Use Safari on iPhone for voice input.");return;}
+    const rec=new SR();
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=e=>{const t=e.results[0][0].transcript;setListening(false);onResult(t);};
+    rec.onerror=()=>setListening(false);
+    rec.onend=()=>setListening(false);
+    rec.start();recRef.current=rec;setListening(true);
+  }
+  function stop(){recRef.current?.stop();setListening(false);}
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"8px 0"}}>
+      <button onClick={listening?stop:start}
+        style={{width:72,height:72,borderRadius:"50%",border:"none",cursor:"pointer",
+          background:listening?"var(--terra)":"var(--green)",color:"white",fontSize:30,
+          boxShadow:listening?"0 0 0 8px rgba(184,92,56,.2)":"0 4px 12px rgba(44,74,62,.3)",
+          transition:"all .2s",animation:listening?"pulse 1s infinite":"none"}}>
+        {listening?"🔴":"🎙"}
+      </button>
+      <div style={{fontSize:11,color:listening?"var(--terra)":"var(--ink3)"}}>
+        {listening?"Listening… tap to stop":"Tap to speak"}
+      </div>
+      <div style={{fontSize:10,color:"var(--ink3)"}}>or</div>
+      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"8px 14px",border:"1px solid var(--border)",borderRadius:20,background:"var(--cream2)",position:"relative"}}>
+        <span style={{fontSize:16}}>📷</span>
+        <span style={{fontSize:11,color:"var(--ink3)"}}>Send a photo</span>
+        <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+          onChange={e=>{if(e.target.files.length&&onPhotos)onPhotos(e.target.files);e.target.value="";}}/>
+      </label>
+    </div>
+  );
+}
+
+// ─── VOICE COMMAND CENTER ─────────────────────────────────────────────────────
+// Parses natural speech into structured actions across all tabs
+async function parseVoiceCommand(transcript, profile, foodLog, water, exLogs){
+  const sys = `You are a health app voice parser. The user just spoke naturally. Extract ALL actions from their message.
+Return ONLY raw JSON — no markdown, no backticks:
+{
+  "foods": [{"name":"food description","meal":"breakfast|lunch|dinner|snack"}],
+  "water_glasses": number_to_ADD_or_null,
+  "water_liters": number_to_ADD_or_null,
+  "exercise": [{"type":"pilates-reformer|pilates-mat|barre|walking|red-light|arm-bands","duration_min":number,"distance":number_or_null,"distance_unit":"blocks|km|miles|null"}],
+  "question": "any question they asked or null",
+  "sleep": {"bedtime":"HH:MM_or_null","waketime":"HH:MM_or_null","hours":number_or_null,"notes":"string_or_null"},
+  "skin_note": "any skin symptom or note or null",
+  "summary_request": true_or_false
+}
+
+ACTIVITY TYPES: pilates-reformer, pilates-mat, barre, walking, red-light, arm-bands
+WATER: convert liters to glasses (1 glass = ${profile.targets?.water_glass_oz||8}oz = ${Math.round((profile.targets?.water_glass_oz||8)*29.5/1000*100)/100}L). If they say "a liter" = ${Math.round(1000/((profile.targets?.water_glass_oz||8)*29.5))} glasses approx.
+MEAL: infer from time of day if not stated. Current hour: ${new Date().getHours()}. Before 11=breakfast, 11-14=lunch, 14-17=snack, after 17=dinner.
+Only include fields that were actually mentioned. Use null/empty array for everything else.`;
+
+  try{
+    const raw = await callClaude([{role:"user", content:"Parse this voice message: "+transcript}], sys);
+    return safeParseJSON(raw) || {};
+  } catch(e){ return {}; }
+}
+
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry,setExLogs,sleepLog,setSleepLog}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
@@ -725,6 +865,9 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const[editEntry,setEditEntry]=useState(null);
   // FIX #1 & #3: Staged photos for combined entry
   const[stagedPhotos,setStagedPhotos]=useState([]);
+  const[voiceMode,setVoiceMode]=useState(false);
+  const[voiceProcessing,setVoiceProcessing]=useState(false);
+  const[voiceResult,setVoiceResult]=useState(null);
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -782,6 +925,77 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     if(u.length===0) setCoachTip(null);
   }
 
+  // Voice Command Center — processes natural speech across all tabs
+  async function handleVoiceCommand(transcript){
+    if(!transcript.trim())return;
+    setVoiceProcessing(true);setVoiceResult(null);
+    const parsed=await parseVoiceCommand(transcript,profile,foodLog,water,exLogs);
+    const actions=[];
+
+    // Process foods
+    if(parsed.foods&&parsed.foods.length){
+      for(const f of parsed.foods){
+        const result=await parseFood(f.name,pantry,foodLog);
+        if(result&&result.name&&!result.error){
+          const mealLabel={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"}[f.meal]||"🍽";
+          const entry={id:Date.now()+Math.random(),name:result.name,meal:f.meal||"snack",mealLabel,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            nutrients:{sodium:result.sodium||0,calcium:result.calcium||0,calories:result.calories||0,
+              protein:result.protein||0,potassium:result.potassium||0,magnesium:result.magnesium||0},
+            oxalate:result.oxalate||"low",notes:result.notes};
+          foodLog=[...foodLog,entry];
+          actions.push("🍽 Logged: "+result.name+" (Na:"+result.sodium+"mg Ca:"+result.calcium+"mg "+result.calories+"kcal "+result.protein+"g prot)");
+        }
+      }
+      if(foodLog!==foodLog){setFoodLog(foodLog);store.set("food-log-"+todayKey(),foodLog);}
+      // Save updated foodLog
+      const newFL=[...foodLog];
+      setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);
+    }
+
+    // Process water
+    let newWater=water;
+    if(parsed.water_glasses){newWater=Math.min(profile.targets?.water_glasses||12,water+Math.round(parsed.water_glasses));actions.push("💧 Water: +"+Math.round(parsed.water_glasses)+" glasses (total: "+newWater+")");}
+    if(parsed.water_liters){const glasses=Math.round(parsed.water_liters*1000/((profile.targets?.water_glass_oz||8)*29.5));newWater=Math.min(profile.targets?.water_glasses||12,water+glasses);actions.push("💧 Water: +"+parsed.water_liters+"L = "+glasses+" glasses (total: "+newWater+")");}
+    if(newWater!==water){setWater(newWater);store.set("water-"+todayKey(),newWater);}
+
+    // Process exercise
+    if(parsed.exercise&&parsed.exercise.length){
+      const newEx=[...exLogs];
+      for(const ex of parsed.exercise){
+        const act=ACTIVITIES.find(a=>a.id===ex.type)||ACTIVITIES.find(a=>a.name.toLowerCase().includes(ex.type?.toLowerCase()||""));
+        if(act){
+          const entry={id:Date.now()+Math.random(),activityId:act.id,duration:ex.duration_min||act.duration,
+            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+            ...(ex.distance?{distance:ex.distance,distanceUnit:ex.distance_unit||"blocks"}:{})};
+          newEx.push(entry);
+          actions.push("💪 Logged: "+act.name+" "+entry.duration+"min"+(ex.distance?" "+ex.distance+" "+(ex.distance_unit||"blocks"):""));
+        }
+      }
+      if(newEx.length!==exLogs.length){setExLogs(newEx);store.set("ex-"+todayKey(),newEx);}
+    }
+
+    // Process sleep
+    if(parsed.sleep&&(parsed.sleep.bedtime||parsed.sleep.hours)){
+      const hours=parsed.sleep.hours||(parsed.sleep.bedtime&&parsed.sleep.waketime?
+        (()=>{const[bh,bm]=parsed.sleep.bedtime.split(":").map(Number);const[wh,wm]=parsed.sleep.waketime.split(":").map(Number);let m=(wh*60+wm)-(bh*60+bm);if(m<0)m+=1440;return Math.round(m/60*10)/10;})():null);
+      const entry={id:Date.now(),date:todayKey(),bedtime:parsed.sleep.bedtime||"",waketime:parsed.sleep.waketime||"",hours,quality:0,notes:parsed.sleep.notes||"",aidTaken:false};
+      const newSL=[...(sleepLog||[]),entry];
+      if(setSleepLog){setSleepLog(newSL);store.set("sleep-log",newSL);}
+      actions.push("🌙 Sleep logged: "+(hours||"?")+"h");
+    }
+
+    // Process skin note
+    if(parsed.skin_note){
+      const noteKey="sn_skin-note-"+todayKey();
+      localStorage.setItem(noteKey,JSON.stringify(parsed.skin_note));
+      actions.push("✨ Skin note saved: "+parsed.skin_note);
+    }
+
+    setVoiceResult({actions, question:parsed.question, summaryRequest:parsed.summary_request, transcript});
+    setVoiceProcessing(false);
+  }
+
   const progToday=isProgDay(todayKey());
   const daysUntil=daysUntilProg(todayKey());
   const todayActivity=exLogs&&exLogs.length?exLogs.map(e=>ACTIVITIES.find(a=>a.id===e.activityId)?.name).filter(Boolean).join(", "):null;
@@ -791,6 +1005,70 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
 
   return(
     <div className="section">
+      {/* ── VOICE COMMAND CENTER ── */}
+      <div style={{marginBottom:14}}>
+        {!voiceMode?(
+          <button onClick={()=>setVoiceMode(true)}
+            style={{width:"100%",padding:"14px",borderRadius:16,border:"2px solid var(--green)",background:"var(--green3)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:12,fontFamily:"'DM Mono',monospace"}}>
+            <span style={{fontSize:28}}>🎙</span>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:12,color:"var(--green)",fontWeight:500,letterSpacing:".04em"}}>Talk to your coach</div>
+              <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>Log food, water, exercise, sleep — just speak naturally</div>
+            </div>
+          </button>
+        ):(
+          <div style={{background:"white",border:"2px solid var(--green)",borderRadius:16,padding:14}}>
+            <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green)",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span>🎙 Voice Command</span>
+              <button onClick={()=>{setVoiceMode(false);setVoiceResult(null);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--ink3)"}}>×</button>
+            </div>
+            {!voiceProcessing&&!voiceResult&&(
+              <VoiceMicButton onResult={handleVoiceCommand} onPhotos={async(files)=>{
+                const imgs=await Promise.all(Array.from(files).map(async f=>({b64:(await compressImage(f)).b64,mediaType:f.type||"image/jpeg"})));
+                const sys=buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,{kidney:"",hrt:"",nerve:"",other:""},[],{});
+                const prompt="User sent "+(imgs.length)+" photo(s). Could be food, a menu, or a product. Analyze and tell them what it is and whether it fits their protocol today.";
+                setVoiceProcessing(true);
+                const reply=await callClaudeWithImages(imgs,prompt,sys);
+                setVoiceResult({actions:[],question:null,photoReply:reply,transcript:"[Photo]"});
+                setVoiceProcessing(false);
+              }}/>
+            )}
+            {voiceProcessing&&(
+              <div style={{textAlign:"center",padding:"16px 0",color:"var(--ink3)",fontSize:11}}>
+                <span className="loading-spin" style={{borderTopColor:"var(--green)",marginRight:8}}/>
+                Processing your message…
+              </div>
+            )}
+            {voiceResult&&(
+              <div>
+                {voiceResult.transcript&&voiceResult.transcript!=="[Photo]"&&(
+                  <div style={{fontSize:11,color:"var(--ink3)",fontStyle:"italic",marginBottom:10,padding:"8px 10px",background:"var(--cream2)",borderRadius:8}}>
+                    "{voiceResult.transcript}"
+                  </div>
+                )}
+                {voiceResult.actions&&voiceResult.actions.length>0&&(
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green)",marginBottom:6}}>Logged automatically:</div>
+                    {voiceResult.actions.map((a,i)=>(
+                      <div key={i} style={{fontSize:11,color:"var(--ink)",padding:"4px 0",borderBottom:"1px solid var(--cream2)"}}>{a}</div>
+                    ))}
+                  </div>
+                )}
+                {voiceResult.photoReply&&(
+                  <div style={{fontSize:11,color:"var(--ink)",lineHeight:1.7,marginBottom:10,padding:"8px 10px",background:"var(--green3)",borderRadius:8}}>{voiceResult.photoReply}</div>
+                )}
+                {voiceResult.question&&(
+                  <div style={{fontSize:11,color:"var(--ink3)",fontStyle:"italic",marginBottom:6}}>Question: "{voiceResult.question}" — ask in the Coach tab for a full answer.</div>
+                )}
+                <button className="btn btn-primary btn-sm" style={{width:"100%",marginTop:6}} onClick={()=>setVoiceResult(null)}>
+                  Tap to speak again
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="day-ribbon">
         <div><div className="ribbon-label">Calories</div><div className="ribbon-val">{totals.calories}<span style={{fontSize:13,opacity:.7}}> / {calTarget}</span></div></div>
         <div style={{textAlign:"center"}}><div className="ribbon-label">Sodium</div><div className="ribbon-val">{totals.sodium}<span style={{fontSize:13,opacity:.7}}>mg</span></div></div>
@@ -2027,20 +2305,55 @@ function PantryTab({pantry,setPantry}){
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
 function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections}){
-  const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything."}]);
+  const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything — or send me a photo of a menu or plate!"}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
+  const[stagedPhotos,setStagedPhotos]=useState([]);
+  const[voiceMode,setVoiceMode]=useState(false);
+  const[voiceProcessing,setVoiceProcessing]=useState(false);
+  const[voiceResult,setVoiceResult]=useState(null);
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
-  const QUICK=["What should I eat for dinner?","Am I getting enough protein today?","Is my Vitamin D working?","What's missing nutritionally?","Suggest something from my pantry","How's my sodium today?","Can I take Actron today?","What should I buy this week?","How are my kidneys doing nutrition-wise?"];
-  async function send(text){
-    if(!text.trim()||loading)return;
-    const userMsg={role:"user",content:text};const newMsgs=[...(messages||[]),userMsg];
-    setMessages(newMsgs);setInput("");setLoading(true);
-    const reply=await callClaude(newMsgs.map(m=>({role:m.role,content:m.content})),buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections));
-    setMessages([...newMsgs,{role:"assistant",content:reply}]);setLoading(false);
+  const QUICK=["What should I order at a restaurant?","Am I getting enough protein today?","Is my Vitamin D working?","What's missing nutritionally?","Suggest something from my pantry","How's my sodium today?","Can I take Actron today?","I have a pimple — could it be my hormones?","How are my kidneys doing nutrition-wise?"];
+
+  async function stagePhotos(files){
+    if(!files||!files.length)return;
+    const newPhotos=await Promise.all(Array.from(files).map(async f=>{
+      const compressed=await compressImage(f,1200,0.85);
+      return{...compressed,preview:URL.createObjectURL(f)};
+    }));
+    setStagedPhotos(p=>[...p,...newPhotos]);
   }
+
+  async function send(text){
+    if((!text.trim()&&!stagedPhoto)||loading)return;
+    const displayText=text.trim()||(stagedPhoto?"[Photo]":"");
+    // Build user message for display
+    const userMsg={role:"user",content:displayText};
+    const newMsgs=[...(messages||[]),userMsg];
+    setMessages(newMsgs);setInput("");setLoading(true);
+    const systemPrompt=buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections);
+    let reply;
+    if(stagedPhoto){
+      // Send photo + text to Claude
+      const photoPrompt=text.trim()
+        ?text
+        :"I'm sending you a photo. It might be a restaurant menu, a food plate, a product label, or something health-related. Based on my full health profile and today's log, give me your best advice.";
+      const fullPrompt=systemPrompt+"
+
+## USER PHOTO MESSAGE
+"+photoPrompt;
+      reply=await callClaudeWithImage(stagedPhoto.b64,stagedPhoto.mediaType,fullPrompt,"You are a health coach. Analyze the image in context of the user's full health profile above. Be specific and actionable.");
+      setStagedPhoto(null);
+    } else {
+      reply=await callClaude(newMsgs.map(m=>({role:m.role,content:m.content})),systemPrompt);
+    }
+    setMessages([...newMsgs,{role:"assistant",content:reply||"Sorry, I couldn't respond. Try again."}]);
+    setLoading(false);
+  }
+
   function renderText(text){return text.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")?<strong key={i}>{p.slice(2,-2)}</strong>:p);}
+
   return(
     <div className="section">
       <p className="section-title">Nutrition Coach</p>
@@ -2054,13 +2367,30 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
         ))}
         {loading&&<div className="msg msg-ai"><div className="msg-label">Coach</div><div className="msg-bubble"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div></div>}
       </div>
+      {/* Staged photos preview strip */}
+      {stagedPhotos.length>0&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"6px 0",alignItems:"center"}}>
+          {stagedPhotos.map((p,i)=>(
+            <div key={i} style={{position:"relative"}}>
+              <img src={p.preview} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:6,border:"1px solid var(--green2)"}}/>
+              <button onClick={()=>setStagedPhotos(photos=>photos.filter((_,j)=>j!==i))}
+                style={{position:"absolute",top:-5,right:-5,background:"var(--terra)",color:"white",border:"none",borderRadius:"50%",width:15,height:15,fontSize:9,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+            </div>
+          ))}
+          <span style={{fontSize:10,color:"var(--green)"}}>{stagedPhotos.length} photo{stagedPhotos.length>1?"s":""} — add question or Send</span>
+        </div>
+      )}
       <div className="chat-input-area">
-        <textarea className="chat-input" placeholder="Ask your coach… or tap 🎤" value={input}
+        <textarea className="chat-input" placeholder={stagedPhotos.length?"Ask about the photos… (optional)":"Ask your coach… or send photos 📷"} value={input}
           onChange={e=>setInput(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
         <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>{listening?"🔴":"🎤"}</button>
-        <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||!input.trim()}>{loading?<span className="loading-spin"/>:"Send"}</button>
+        {/* Camera button */}
+        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
+          📷<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
+        </label>
+        <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||(!input.trim()&&!stagedPhotos.length)}>{loading?<span className="loading-spin"/>:"Send"}</button>
       </div>
     </div>
   );
@@ -3041,10 +3371,10 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.12</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.14</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry} setExLogs={setExLogs} sleepLog={sleepLog} setSleepLog={setSleepLog}/>}
         {tab==="history"&&<HistoryTab sleepLog={sleepLog}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
