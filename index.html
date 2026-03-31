@@ -225,8 +225,7 @@ ${lastSleep&&lastSleep.hours<6?"⚠️ Poor sleep — suggest energy-supporting 
 ${lastSleep&&lastSleep.aidTaken?"Note: sleep aid taken last night — check for any morning grogginess affecting medication timing":""}
 
 ## SKIN NOTES (integration)
-${skinNotes.length?skinNotes.join("
-"):"No recent skin notes"}
+${skinNotes.length?skinNotes.join(", "):"No recent skin notes"}
 If user mentions skin symptoms (pimples, itching, dryness, rash): cross-reference with HRT medications (estradiol/progesterone), recent diet changes, sleep quality, and hydration. Connect dots proactively.
 
 ## UPCOMING PROCEDURES (integration)
@@ -234,13 +233,11 @@ ${upcoming.length?upcoming.join(", "):"None in next 7 days"}
 If procedure coming up: flag relevant prep (fasting, medication timing, hydration).
 
 ## PAST 7 DAYS — ANIMAL PROTEIN SOURCES (integration)
-${past7Protein.length?past7Protein.join("
-"):"No history available"}
+${past7Protein.length?past7Protein.join(", "):"No history available"}
 If same protein source appears 3+ times this week: suggest alternatives. Variety prevents uric acid buildup.
 
 ## FOOD LOG TODAY
-${foodLog.map(f=>`${f.time} ${f.name} (Na:${f.nutrients?.sodium||0}mg Ca:${f.nutrients?.calcium||0}mg kcal:${f.nutrients?.calories||0} prot:${f.nutrients?.protein||0}g)`).join("
-")||"Nothing logged yet."}
+${foodLog.map(f=>`${f.time} ${f.name} (Na:${f.nutrients?.sodium||0}mg Ca:${f.nutrients?.calcium||0}mg kcal:${f.nutrients?.calories||0} prot:${f.nutrients?.protein||0}g)`).join(", ")||"Nothing logged yet."}
 Running totals: Na ${totals.sodium}mg | Ca ${totals.calcium}mg | Mg ${totals.magnesium}mg | ${totals.calories}kcal | ${totals.protein}g protein
 
 ## PANTRY (suggest from here first)
