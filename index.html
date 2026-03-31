@@ -2584,6 +2584,186 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
   );
 }
 
+
+// ─── HISTORY TAB ──────────────────────────────────────────────────────────────
+function HistoryTab({sleepLog}){
+  const[selectedDate,setSelectedDate]=useState(null);
+  const[dayData,setDayData]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[viewMonth,setViewMonth]=useState(new Date());
+
+  // Load data for a specific day from localStorage
+  async function loadDay(dateStr){
+    setLoading(true);setSelectedDate(dateStr);
+    const food=await store.get("food-log-"+dateStr)||[];
+    const water=await store.get("water-"+dateStr)||0;
+    const ex=await store.get("ex-"+dateStr)||[];
+    const sleep=sleepLog.filter(s=>s.date===dateStr);
+    setDayData({food,water,ex,sleep});
+    setLoading(false);
+  }
+
+  // Build calendar grid
+  const year=viewMonth.getFullYear();
+  const month=viewMonth.getMonth();
+  const firstDay=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const today=todayKey();
+  const monthName=viewMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+
+  // Check which days have data
+  function hasData(dateStr){
+    // Check localStorage for food log key
+    try{return!!localStorage.getItem("sn_food-log-"+dateStr);}catch{return false;}
+  }
+
+  function dateStr(d){
+    return `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  }
+
+  function prevMonth(){setViewMonth(new Date(year,month-1,1));setSelectedDate(null);setDayData(null);}
+  function nextMonth(){setViewMonth(new Date(year,month+1,1));setSelectedDate(null);setDayData(null);}
+
+  const totals=dayData?.food?computeTotals(dayData.food):{};
+  const DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+  return(
+    <div className="section">
+      <p className="section-title">History</p>
+
+      {/* Calendar */}
+      <div style={{background:"white",border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:14}}>
+        {/* Month nav */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--green)",padding:"4px 8px"}}>‹</button>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,color:"var(--green)"}}>{monthName}</div>
+          <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--green)",padding:"4px 8px",opacity:dateStr(1)>=today?"0.3":"1"}} disabled={dateStr(1)>=today}>›</button>
+        </div>
+        {/* Day headers */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+          {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:9,color:"var(--ink3)",letterSpacing:".06em",padding:"3px 0"}}>{d}</div>)}
+        </div>
+        {/* Day cells */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+          {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
+          {Array.from({length:daysInMonth}).map((_,i)=>{
+            const d=i+1;
+            const ds=dateStr(d);
+            const isToday=ds===today;
+            const isFuture=ds>today;
+            const isSelected=ds===selectedDate;
+            const hasFoodData=hasData(ds);
+            const hasSleep=sleepLog.some(s=>s.date===ds);
+            return(
+              <button key={d} onClick={()=>!isFuture&&loadDay(ds)}
+                style={{
+                  aspectRatio:"1",borderRadius:8,border:"1px solid",cursor:isFuture?"default":"pointer",
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,
+                  background:isSelected?"var(--green)":isToday?"var(--green3)":"white",
+                  borderColor:isSelected?"var(--green)":isToday?"var(--green2)":"var(--border)",
+                  opacity:isFuture?.3:1,position:"relative"
+                }}>
+                <span style={{fontSize:11,color:isSelected?"white":isToday?"var(--green)":"var(--ink)",fontWeight:isToday?"600":"normal"}}>{d}</span>
+                <div style={{display:"flex",gap:2}}>
+                  {hasFoodData&&<div style={{width:4,height:4,borderRadius:"50%",background:isSelected?"rgba(255,255,255,.7)":"var(--green2)"}}/>}
+                  {hasSleep&&<div style={{width:4,height:4,borderRadius:"50%",background:isSelected?"rgba(255,255,255,.7)":"var(--rose)"}}/>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",gap:12,marginTop:10,fontSize:9,color:"var(--ink3)"}}>
+          <span><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"var(--green2)",marginRight:3,verticalAlign:"middle"}}/>Food logged</span>
+          <span><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"var(--rose)",marginRight:3,verticalAlign:"middle"}}/>Sleep logged</span>
+        </div>
+      </div>
+
+      {/* Selected day detail */}
+      {loading&&<div style={{textAlign:"center",padding:20,color:"var(--ink3)",fontSize:11}}>Loading…</div>}
+
+      {selectedDate&&dayData&&!loading&&(
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:"var(--green)",marginBottom:12}}>
+            {new Date(selectedDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+          </div>
+
+          {/* Day summary ribbon */}
+          {dayData.food.length>0&&(
+            <div className="day-ribbon" style={{marginBottom:12}}>
+              <div><div className="ribbon-label">Calories</div><div className="ribbon-val">{totals.calories||0}</div></div>
+              <div style={{textAlign:"center"}}><div className="ribbon-label">Sodium</div><div className="ribbon-val">{totals.sodium||0}<span style={{fontSize:12,opacity:.7}}>mg</span></div></div>
+              <div style={{textAlign:"right"}}><div className="ribbon-label">Calcium</div><div className="ribbon-val">{totals.calcium||0}<span style={{fontSize:12,opacity:.7}}>mg</span></div></div>
+            </div>
+          )}
+
+          {/* Water */}
+          {dayData.water>0&&(
+            <div style={{background:"var(--green3)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>💧</span>
+              <span style={{fontSize:12,color:"var(--green)"}}>{dayData.water} glasses of water</span>
+            </div>
+          )}
+
+          {/* Exercise */}
+          {dayData.ex.length>0&&(
+            <div style={{background:"white",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+              <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Exercise</div>
+              {dayData.ex.map((e,i)=>{
+                const act=ACTIVITIES.find(a=>a.id===e.activityId);
+                return act?<div key={i} style={{fontSize:12,color:"var(--ink)",marginBottom:3}}>{act.emoji} {act.name} · {e.duration}min{e.distance?" · "+e.distance+" "+e.distanceUnit:""}</div>:null;
+              })}
+            </div>
+          )}
+
+          {/* Sleep */}
+          {dayData.sleep.length>0&&dayData.sleep.map((s,i)=>(
+            <div key={i} style={{background:"white",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>🌙</span>
+              <div>
+                <div style={{fontSize:13,color:"var(--ink)",fontFamily:"'Cormorant Garamond',serif"}}>{s.hours}h sleep</div>
+                <div style={{fontSize:10,color:"var(--ink3)"}}>{s.bedtime} → {s.waketime}{s.aidTaken?" · 💊 aid":""}</div>
+                {s.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic"}}>{s.notes}</div>}
+              </div>
+            </div>
+          ))}
+
+          {/* Food log */}
+          {dayData.food.length===0?(
+            <div className="empty-state"><div className="empty-icon">🥗</div><div>No food logged this day</div></div>
+          ):(
+            <div>
+              <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8,borderBottom:"1px solid var(--border)",paddingBottom:4}}>Food log</div>
+              {dayData.food.map(f=>(
+                <div key={f.id} style={{background:"white",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",marginBottom:7,display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <div style={{fontSize:10,color:"var(--ink3)",minWidth:32}}><div>{f.mealLabel||""}</div><div>{f.time}</div></div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:"var(--ink)",marginBottom:3}}>{f.name}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {f.nutrients?.calories>0&&<span className="macro-tag">{f.nutrients.calories} kcal</span>}
+                      {f.nutrients?.sodium>0&&<span className={`macro-tag ${f.nutrients.sodium>400?"warn":""}`}>Na {f.nutrients.sodium}mg</span>}
+                      {f.nutrients?.calcium>0&&<span className="macro-tag">Ca {f.nutrients.calcium}mg</span>}
+                      {f.nutrients?.protein>0&&<span className="macro-tag">{f.nutrients.protein}g prot</span>}
+                      {f.oxalate&&<span className={`ox-${f.oxalate}`}>ox {f.oxalate}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {dayData.food.length===0&&dayData.water===0&&dayData.ex.length===0&&dayData.sleep.length===0&&(
+            <div className="empty-state"><div className="empty-icon">📅</div><div>Nothing logged this day</div></div>
+          )}
+        </div>
+      )}
+
+      {!selectedDate&&(
+        <div className="empty-state"><div className="empty-icon">📅</div><div>Tap a day on the calendar to see your log</div></div>
+      )}
+    </div>
+  );
+}
+
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
   name:"Sofia",
@@ -2664,6 +2844,7 @@ function App(){
   // FIX #5: Shortened tab labels to prevent overlap
   const TABS=[
     {id:"today",label:"Today"},
+    {id:"history",label:"History"},
     {id:"exercise",label:"Exercise"},
     {id:"skincare",label:"Skin"},
     {id:"meds",label:"Meds"},
@@ -2682,10 +2863,11 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.7</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.8</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
+        {tab==="history"&&<HistoryTab sleepLog={sleepLog}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
