@@ -1061,49 +1061,85 @@ function ExerciseTab({exLogs,setExLogs}){
 }
 
 // ─── SKINCARE TAB ─────────────────────────────────────────────────────────────
-function SkincareTab({skChecks,setSkChecks}){
+function SkincareTab({skChecks,setSkChecks,skinProducts,setSkinProducts}){
   const dow=new Date().getDay();
   const dayNames=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   const eveningItems=SK_EVENING[dow];
+  const[skinTab,setSkinTab]=useState("routine"); // "routine" | "products"
   function toggle(section,idx){const key=`${section}-${idx}`;const u={...skChecks,[todayKey()+"_"+key]:!skChecks[todayKey()+"_"+key]};setSkChecks(u);store.set("sk-checks",u);}
   function isDone(section,idx){return!!skChecks[todayKey()+"_"+`${section}-${idx}`];}
   return(
     <div className="section">
       <p className="section-title">Skincare</p>
-      <p style={{fontSize:10,color:"var(--ink3)",marginBottom:16,letterSpacing:".05em"}}>{dayNames[dow]}'s routine</p>
-      <div className="sk-section">
-        <div className="sk-title">☀️ Morning — every day</div>
-        {SK_MORNING.map((item,i)=>(
-          <div className="sk-item" key={i}>
-            <div className={`sk-check ${isDone("am",i)?"done":""}`} onClick={()=>toggle("am",i)}>{isDone("am",i)?"✓":""}</div>
-            <div className="sk-name">{item}</div>
+      {/* Sub-tabs */}
+      <div style={{display:"flex",gap:0,marginBottom:16,border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+        {[["routine","🗓 Routine"],["products","✨ Products"]].map(([t,label])=>(
+          <button key={t} onClick={()=>setSkinTab(t)}
+            style={{flex:1,padding:"9px 6px",fontSize:10,letterSpacing:".06em",textTransform:"uppercase",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",
+              background:skinTab===t?"var(--rose)":"white",color:skinTab===t?"white":"var(--ink3)"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {skinTab==="routine"&&(
+        <>
+          <p style={{fontSize:10,color:"var(--ink3)",marginBottom:12,letterSpacing:".05em"}}>{dayNames[dow]}'s routine</p>
+          <div className="sk-section">
+            <div className="sk-title">☀️ Morning — every day</div>
+            {SK_MORNING.map((item,i)=>(
+              <div className="sk-item" key={i}>
+                <div className={`sk-check ${isDone("am",i)?"done":""}`} onClick={()=>toggle("am",i)}>{isDone("am",i)?"✓":""}</div>
+                <div className="sk-name">{item}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="sk-section">
-        <div className="sk-title">🌙 Evening — {dayNames[dow]}</div>
-        {eveningItems.map((item,i)=>(
-          <div className="sk-item" key={i}>
-            <div className={`sk-check ${isDone("pm",i)?"done":""}`} onClick={()=>toggle("pm",i)}>{isDone("pm",i)?"✓":""}</div>
-            <div className="sk-name">{item}</div>
+          <div className="sk-section">
+            <div className="sk-title">🌙 Evening — {dayNames[dow]}</div>
+            {eveningItems.map((item,i)=>(
+              <div className="sk-item" key={i}>
+                <div className={`sk-check ${isDone("pm",i)?"done":""}`} onClick={()=>toggle("pm",i)}>{isDone("pm",i)?"✓":""}</div>
+                <div className="sk-name">{item}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="sk-section">
-        <div className="sk-title">🤲 Hands — every night</div>
-        {SK_HANDS.map((item,i)=>(
-          <div className="sk-item" key={i}>
-            <div className={`sk-check ${isDone("hands",i)?"done":""}`} onClick={()=>toggle("hands",i)}>{isDone("hands",i)?"✓":""}</div>
-            <div className="sk-name">{item}</div>
+          <div className="sk-section">
+            <div className="sk-title">🤲 Hands — every night</div>
+            {SK_HANDS.map((item,i)=>(
+              <div className="sk-item" key={i}>
+                <div className={`sk-check ${isDone("hands",i)?"done":""}`} onClick={()=>toggle("hands",i)}>{isDone("hands",i)?"✓":""}</div>
+                <div className="sk-name">{item}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,padding:13,fontSize:11,color:"var(--ink3)",lineHeight:1.7}}>
-        <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>Weekly overview</div>
-        {["Sun — Lactic acid","Mon — Rest","Tue — Salicylic acid","Wed — Rest","Thu — Retinol","Fri — Salicylic acid","Sat — Retinol"].map((d,i)=>(
-          <div key={i} style={{padding:"3px 0",color:i===dow?"var(--green)":"var(--ink3)",fontWeight:i===dow?"500":"normal"}}>{i===dow?"→ ":""}{d}</div>
-        ))}
-      </div>
+          <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,padding:13,fontSize:11,color:"var(--ink3)",lineHeight:1.7}}>
+            <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:8}}>Weekly overview</div>
+            {["Sun — Lactic acid","Mon — Rest","Tue — Salicylic acid","Wed — Rest","Thu — Retinol","Fri — Salicylic acid","Sat — Retinol"].map((d,i)=>(
+              <div key={i} style={{padding:"3px 0",color:i===dow?"var(--green)":"var(--ink3)",fontWeight:i===dow?"500":"normal"}}>{i===dow?"→ ":""}{d}</div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {skinTab==="products"&&(
+        <>
+          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>Products scanned and saved from the Scan tab.</p>
+          {skinProducts.length===0
+            ?<div className="empty-state"><div className="empty-icon">✨</div><div>Scan a product in the Scan tab → save to Skin</div></div>
+            :skinProducts.map(p=>(
+              <div className="pantry-item" key={p.id}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{p.name}</div>
+                  {p.verdict&&<div style={{fontSize:10,color:p.verdict==="yes"?"var(--green2)":p.verdict==="no"?"var(--terra)":"var(--gold)",marginTop:2}}>{p.verdict_emoji} {p.headline}</div>}
+                  {p.reasoning&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:3,fontStyle:"italic"}}>{p.reasoning.slice(0,120)}</div>}
+                  {p.date&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{p.date}</div>}
+                </div>
+                <button className="food-delete" onClick={()=>{const u=skinProducts.filter(x=>x.id!==p.id);setSkinProducts(u);store.set("skin-products",u);}}>×</button>
+              </div>
+            ))
+          }
+        </>
+      )}
     </div>
   );
 }
@@ -1489,28 +1525,115 @@ Return ONLY raw JSON:
 
 
 // ─── MEDICAL TAB ─────────────────────────────────────────────────────────────
-function MedicalTab({medical,setMedical}){
+function MedicalTab({medical,setMedical,medDocs,setMedDocs}){
   const[editing,setEditing]=useState(null);const[editVal,setEditVal]=useState("");
+  const[medTab,setMedTab]=useState("context"); // "context" | "docs"
+  const[docName,setDocName]=useState("");const[docCat,setDocCat]=useState("Lab results");
+  const[uploading,setUploading]=useState(false);
   const sections=[{key:"kidney",title:"Kidney Protocol",icon:"🫘"},{key:"hrt",title:"HRT",icon:"💊"},{key:"nerve",title:"Nerve / Arm",icon:"💪"},{key:"other",title:"Other Notes",icon:"📋"}];
+  const DOC_CATS=["Lab results","Blood work","Imaging (X-ray/MRI/CT)","Prescription","Doctor notes","Tomography","Ultrasound","Other"];
   function startEdit(key){setEditing(key);setEditVal(medical[key]);}
   function saveEdit(){const u={...medical,[editing]:editVal};setMedical(u);store.set("medical",u);setEditing(null);}
+
+  async function handleDocUpload(file){
+    if(!file||!docName.trim())return;
+    setUploading(true);
+    // Store as base64 with metadata
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      const b64=e.target.result; // full data URL
+      const doc={id:Date.now(),name:docName.trim(),category:docCat,date:todayKey(),
+        fileType:file.type,fileName:file.name,size:Math.round(file.size/1024),
+        dataUrl:b64};
+      const u=[...medDocs,doc];setMedDocs(u);store.set("med-docs",u);
+      setDocName("");setUploading(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeDoc(id){const u=medDocs.filter(d=>d.id!==id);setMedDocs(u);store.set("med-docs",u);}
+
+  function openDoc(doc){
+    const w=window.open();
+    w.document.write(`<html><body style="margin:0;background:#000"><img src="${doc.dataUrl}" style="max-width:100%;display:block;margin:auto"/></body></html>`);
+  }
+
+  const grouped=DOC_CATS.reduce((a,c)=>{a[c]=medDocs.filter(d=>d.category===c);return a;},{});
+
   return(
     <div className="section">
-      <p className="section-title">Medical Context</p>
-      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Medical information the Coach uses to personalize your advice. Update when you get new test results or your doctor changes your protocol.</p>
-      {sections.map(s=>(
-        <div className="med-card" key={s.key}>
-          <div className="med-card-title">
-            {s.icon} {s.title}
-            {editing===s.key
-              ?<div style={{display:"flex",gap:7}}><button className="btn btn-primary btn-sm" onClick={saveEdit}>Save</button><button className="btn btn-outline btn-sm" onClick={()=>setEditing(null)}>Cancel</button></div>
-              :<button className="btn btn-outline btn-sm" onClick={()=>startEdit(s.key)}>Edit</button>}
+      <p className="section-title">Medical</p>
+      {/* Sub-tabs */}
+      <div style={{display:"flex",gap:0,marginBottom:14,border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+        {[["context","📋 Protocol"],["docs","🗂 Documents"]].map(([t,label])=>(
+          <button key={t} onClick={()=>setMedTab(t)}
+            style={{flex:1,padding:"9px 6px",fontSize:10,letterSpacing:".06em",textTransform:"uppercase",border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",
+              background:medTab===t?"var(--green)":"white",color:medTab===t?"white":"var(--ink3)"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {medTab==="context"&&(
+        <>
+          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Medical information the Coach uses to personalize your advice.</p>
+          {sections.map(s=>(
+            <div className="med-card" key={s.key}>
+              <div className="med-card-title">
+                {s.icon} {s.title}
+                {editing===s.key
+                  ?<div style={{display:"flex",gap:7}}><button className="btn btn-primary btn-sm" onClick={saveEdit}>Save</button><button className="btn btn-outline btn-sm" onClick={()=>setEditing(null)}>Cancel</button></div>
+                  :<button className="btn btn-outline btn-sm" onClick={()=>startEdit(s.key)}>Edit</button>}
+              </div>
+              {editing===s.key
+                ?<textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/>
+                :<div className="med-text">{medical[s.key]}</div>}
+            </div>
+          ))}
+        </>
+      )}
+
+      {medTab==="docs"&&(
+        <>
+          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.5}}>Upload prescriptions, lab results, imaging, or doctor notes. Each file is saved with a name and category.</p>
+          {/* Upload area */}
+          <div className="add-food-area" style={{marginBottom:14}}>
+            <div className="add-food-title">Add document</div>
+            <input className="text-input" style={{width:"100%",marginBottom:7}} placeholder="Document name (e.g. Lab results Nov 2025)"
+              value={docName} onChange={e=>setDocName(e.target.value)}/>
+            <select className="text-input" style={{width:"100%",marginBottom:7}} value={docCat} onChange={e=>setDocCat(e.target.value)}>
+              {DOC_CATS.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+            <label style={{display:"block"}}>
+              <div style={{border:"2px dashed var(--border)",borderRadius:10,padding:14,textAlign:"center",background:"white",cursor:docName.trim()?"pointer":"not-allowed",opacity:docName.trim()?1:.5}}>
+                {uploading?<><span className="loading-spin" style={{borderTopColor:"var(--green)"}}/> Saving…</>
+                :<><div style={{fontSize:22,marginBottom:4}}>📎</div><div style={{fontSize:11,color:"var(--green)",fontWeight:500}}>{docName.trim()?"Tap to upload file":"Enter a name first"}</div><div style={{fontSize:10,color:"var(--ink3)",marginTop:3}}>Photo, PDF, or any image</div></>}
+              </div>
+              <input type="file" accept="image/*,application/pdf" style={{display:"none"}} disabled={!docName.trim()||uploading}
+                onChange={e=>{if(e.target.files[0])handleDocUpload(e.target.files[0]);e.target.value="";}}/>
+            </label>
           </div>
-          {editing===s.key
-            ?<textarea className="text-input" style={{width:"100%",minHeight:120,fontSize:11}} value={editVal} onChange={e=>setEditVal(e.target.value)}/>
-            :<div className="med-text">{medical[s.key]}</div>}
-        </div>
-      ))}
+          {/* Document library */}
+          {medDocs.length===0
+            ?<div className="empty-state"><div className="empty-icon">🗂</div><div>No documents yet — upload your first one above</div></div>
+            :DOC_CATS.map(cat=>grouped[cat]&&grouped[cat].length>0&&(
+              <div key={cat} style={{marginBottom:14}}>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:4}}>{cat}</div>
+                {grouped[cat].map(doc=>(
+                  <div key={doc.id} style={{background:"white",border:"1px solid var(--border)",borderRadius:8,padding:"10px 13px",marginBottom:6,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{fontSize:22,flexShrink:0}}>{doc.fileType==="application/pdf"?"📄":"🖼"}</div>
+                    <div style={{flex:1,cursor:"pointer"}} onClick={()=>openDoc(doc)}>
+                      <div style={{fontSize:12,color:"var(--green)",textDecoration:"underline"}}>{doc.name}</div>
+                      <div style={{fontSize:9,color:"var(--ink3)",marginTop:2}}>{doc.fileName} · {doc.size}KB · {doc.date}</div>
+                    </div>
+                    <button className="food-delete" onClick={()=>removeDoc(doc.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            ))
+          }
+        </>
+      )}
     </div>
   );
 }
@@ -1640,13 +1763,41 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
 function ProfileTab({profile,setProfile}){
   const[newR,setNewR]=useState("");const[newC,setNewC]=useState("");
   function updateTarget(key,val){const u={...profile,targets:{...profile.targets,[key]:isNaN(Number(val))?val:Number(val)}};setProfile(u);store.set("profile",u);}
+  function updateField(key,val){const u={...profile,[key]:isNaN(Number(val))?val:Number(val)};setProfile(u);store.set("profile",u);}
   function addR(){if(!newR.trim())return;const u={...profile,restrictions:[...profile.restrictions,newR.trim()]};setProfile(u);store.set("profile",u);setNewR("");}
   function removeR(i){const r=[...profile.restrictions];r.splice(i,1);const u={...profile,restrictions:r};setProfile(u);store.set("profile",u);}
   function addC(){if(!newC.trim())return;const u={...profile,conditions:[...profile.conditions,newC.trim()]};setProfile(u);store.set("profile",u);setNewC("");}
   function removeC(i){const c=[...profile.conditions];c.splice(i,1);const u={...profile,conditions:c};setProfile(u);store.set("profile",u);}
+  // BMI calc
+  const bmi=profile.weight_kg&&profile.height_cm?Math.round((profile.weight_kg/((profile.height_cm/100)**2))*10)/10:null;
   return(
     <div className="section">
       <p className="section-title">Profile</p>
+
+      {/* Personal info — weight & height */}
+      <div className="profile-section">
+        <div className="profile-section-title">Personal</div>
+        <div className="target-grid">
+          <div className="target-card">
+            <div className="target-label">Weight</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+              <input className="target-input" type="number" step="0.1" value={profile.weight_kg||""} onChange={e=>updateField("weight_kg",e.target.value)}/>
+              <span style={{fontSize:10,color:"var(--ink3)"}}>kg</span>
+            </div>
+            {profile.weight_kg&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>{Math.round(profile.weight_kg*2.205*10)/10} lbs</div>}
+          </div>
+          <div className="target-card">
+            <div className="target-label">Height</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+              <input className="target-input" type="number" value={profile.height_cm||""} onChange={e=>updateField("height_cm",e.target.value)}/>
+              <span style={{fontSize:10,color:"var(--ink3)"}}>cm</span>
+            </div>
+            {profile.height_cm&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>{Math.floor(profile.height_cm/2.54/12)}'{Math.round(profile.height_cm/2.54%12)}"</div>}
+          </div>
+        </div>
+        {bmi&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:8}}>BMI: {bmi} · {bmi<18.5?"Underweight":bmi<25?"Normal":bmi<30?"Overweight":"Obese"}</div>}
+      </div>
+
       <div className="profile-section">
         <div className="profile-section-title">Daily targets</div>
         <div className="target-grid">
@@ -1654,7 +1805,7 @@ function ProfileTab({profile,setProfile}){
             <div className="target-card" key={t.key}><div className="target-label">{t.label}</div><div style={{display:"flex",alignItems:"baseline",gap:5}}><input className="target-input" type="number" value={profile.targets[t.key]} onChange={e=>updateTarget(t.key,e.target.value)}/><span style={{fontSize:10,color:"var(--ink3)"}}>{t.unit}</span></div></div>
           ))}
         </div>
-        <div style={{fontSize:10,color:"var(--ink3)",marginTop:8,fontStyle:"italic"}}>Note: Protein and calorie targets adjust automatically based on exercise logged each day.</div>
+        <div style={{fontSize:10,color:"var(--ink3)",marginTop:8,fontStyle:"italic"}}>Protein and calorie targets adjust automatically based on exercise logged.</div>
       </div>
       <div className="profile-section">
         <div className="profile-section-title">Conditions</div>
@@ -1698,7 +1849,7 @@ function SkinProductsTab({skinProducts,setSkinProducts}){
 const DEFAULT_PROFILE={
   name:"Sofia",
   // FIX #10: protein_g 65 not 55
-  targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
+  weight_kg:44,height_cm:160,targets:{water_glasses:12,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
   conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
   restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian"],
   notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always. PESCATARIAN — no meat.",
@@ -1718,6 +1869,7 @@ function App(){
   const[injections,setInjections]=useState([]);
   const[medical,setMedical]=useState(DEFAULT_MEDICAL);
   const[skinProducts,setSkinProducts]=useState([]);
+  const[medDocs,setMedDocs]=useState([]);
   const[loaded,setLoaded]=useState(false);
 
   useEffect(()=>{
@@ -1734,6 +1886,7 @@ function App(){
         const inj=await store.get("injections");if(inj)setInjections(inj);
         const med=await store.get("medical");if(med)setMedical(med);
         const sp=await store.get("skin-products");if(sp)setSkinProducts(sp);
+        const md=await store.get("med-docs");if(md)setMedDocs(md);
         setLoaded(true);
       }catch(e){console.warn(e);}
       document.getElementById("splash").style.display="none";
@@ -1773,7 +1926,6 @@ function App(){
     {id:"injections",label:"Proced."},
     {id:"medical",label:"Medical"},
     {id:"pantry",label:"Pantry"},
-    {id:"skin-products",label:"Skin Prod."},
     {id:"coach",label:"Coach ✦"},
     {id:"profile",label:"Profile"},
   ];
@@ -1784,18 +1936,17 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.3</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.4</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
-        {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks}/>}
+        {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="meds"&&<MedsTab master={master} setMaster={setMaster}/>}
         {tab==="scan"&&<ScanTab profile={profile} onSave={handleScanSave} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
-        {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical}/>}
+        {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical} medDocs={medDocs} setMedDocs={setMedDocs}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
-        {tab==="skin-products"&&<SkinProductsTab skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
         {tab==="coach"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical}/>}
         {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile}/>}
       </div>
