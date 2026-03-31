@@ -807,25 +807,32 @@ function VoiceMicButton({onResult,onPhotos}){
   const[active,setActive]=useState(false);
   const[transcript,setTranscript]=useState("");
   const recRef=useRef(null);
-  const gotRef=useRef(false);
+  const accumRef=useRef("");
   function start(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){alert("Voice not supported — type your message below instead.");return;}
-    gotRef.current=false;
+    if(!SR){alert("Voice not supported — use the text box below instead.");return;}
+    accumRef.current="";setTranscript("");
     var rec=new SR();
-    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.lang="en-US";
+    rec.continuous=true;
+    rec.interimResults=false;
     rec.onresult=function(e){
-      gotRef.current=true;
-      var t=Array.from(e.results).map(function(r){return r[0].transcript;}).join(" ");
-      setTranscript(t);
-      setActive(false);
+      var t="";
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal)t+=e.results[i][0].transcript+" ";
+      }
+      if(t){accumRef.current+=t;setTranscript(accumRef.current.trim());}
     };
-    rec.onerror=function(e){console.warn("Speech error",e.error);setActive(false);};
-    rec.onend=function(){setActive(false);};
-    rec.start();recRef.current=rec;setActive(true);setTranscript("");
+    rec.onerror=function(e){if(e.error!=="no-speech")console.warn("Speech:",e.error);};
+    rec.onend=function(){if(recRef.current===rec)try{rec.start();}catch(e){}};
+    rec.start();recRef.current=rec;setActive(true);
   }
-  function stop(){if(recRef.current)recRef.current.stop();setActive(false);}
-  function submit(){if(transcript.trim()){onResult(transcript);setTranscript("");}}
+  function stop(){
+    var r=recRef.current;recRef.current=null;
+    if(r)try{r.stop();}catch(e){}
+    setActive(false);
+  }
+  function submit(){if(transcript.trim()){onResult(transcript.trim());setTranscript("");accumRef.current="";}else if(accumRef.current.trim()){onResult(accumRef.current.trim());setTranscript("");accumRef.current="";}}
   return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"8px 0"}}>
       <button onClick={active?stop:start}
