@@ -1681,6 +1681,7 @@ function MedItemCard({item,onTogglePaused,onRemove,onSave}){
 // ─── MEDS TAB ────────────────────────────────────────────────────────────────
 function MedsTab({master,setMaster}){
   const[showAdd,setShowAdd]=useState(false);
+  const[sleepType,setSleepType]=useState("night");
   const[editingSleepId,setEditingSleepId]=useState(null);
   const[editSleep,setEditSleep]=useState(null);const[scanning,setScanning]=useState(false);const[scanPreview,setScanPreview]=useState(null);const[scanResult,setScanResult]=useState(null);
   const[newItem,setNewItem]=useState({name:"",dose:"",category:"supplement",time:"morning",notes:""});
@@ -3001,6 +3002,7 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
   const[quality,setQuality]=useState(0);
   const[notes,setNotes]=useState("");
   const[showAdd,setShowAdd]=useState(false);
+  const[sleepType,setSleepType]=useState("night");
   const[editingSleepId,setEditingSleepId]=useState(null);
   const[editSleep,setEditSleep]=useState(null);
 
@@ -3022,10 +3024,10 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
       const isSleepAid=m.name.toLowerCase().includes("sleep")||m.name.toLowerCase().includes("melatonin")||m.name.toLowerCase().includes("ambien")||m.name.toLowerCase().includes("kirkland");
       return isSleepAid && takenToday && takenToday[m.id]===true;
     });
-    const entry={id:Date.now(),date:todayKey(),bedtime,waketime,hours,quality,notes:notes.trim(),aidTaken};
+    const entry={id:Date.now(),date:todayKey(),bedtime,waketime,hours,quality,notes:notes.trim(),aidTaken,sleepType:sleepType||"night"};
     const u=[...sleepLog,entry];
     setSleepLog(u);store.set("sleep-log",u);
-    setBedtime("");setWaketime("");setQuality(0);setNotes("");setShowAdd(false);
+    setBedtime("");setWaketime("");setQuality(0);setNotes("");setSleepType("night");setShowAdd(false);
   }
 
   function removeEntry(id){const u=sleepLog.filter(e=>e.id!==id);setSleepLog(u);store.set("sleep-log",u);}
@@ -3076,12 +3078,24 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
 
       {/* Log button */}
       <button className="btn btn-primary" style={{width:"100%",marginBottom:14}} onClick={()=>setShowAdd(!showAdd)}>
-        {showAdd?"— Cancel":"+ Log last night's sleep"}
+        {showAdd?"— Cancel":"+ Log a sleep session"}
       </button>
 
       {showAdd&&(
         <div className="add-food-area" style={{marginBottom:14}}>
-          <div className="add-food-title">Log sleep</div>
+          <div className="add-food-title">Log sleep session</div>
+          <div style={{display:"flex",gap:6,marginBottom:10}}>
+            {[["night","🌙 Night"],["nap","☀️ Nap"],["rest","😌 Rest"],["interrupted","⚡ Wake-up"]].map(function(t){return(
+              <button key={t[0]} onClick={function(){setSleepType(t[0]);}}
+                style={{flex:1,padding:"7px 4px",fontSize:9,border:"1px solid",borderRadius:8,cursor:"pointer",
+                  fontFamily:"'DM Mono',monospace",textAlign:"center",lineHeight:1.3,
+                  background:sleepType===t[0]?"var(--green)":"white",
+                  color:sleepType===t[0]?"white":"var(--ink3)",
+                  borderColor:sleepType===t[0]?"var(--green)":"var(--border)"}}>
+                {t[1]}
+              </button>
+            );})}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
             <div>
               <div style={{fontSize:9,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Bedtime</div>
@@ -3132,7 +3146,7 @@ function SleepTab({sleepLog,setSleepLog,master,takenToday}){
                     <span style={{fontSize:10,color:"var(--ink3)"}}>{e.bedtime} → {e.waketime}</span>
                     {e.aidTaken&&<span style={{fontSize:9,color:"var(--rose)"}}>💊 aid</span>}
                   </div>
-                  <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>{e.date}{e.quality>0&&" · "+qualityEmoji[e.quality].repeat(e.quality)}</div>
+                  <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>{e.sleepType==="nap"?"☀️ Nap":e.sleepType==="rest"?"😌 Rest":e.sleepType==="interrupted"?"⚡ Wake-up":"🌙 Night"}{" · "}{e.date}{e.quality>0&&" · "+qualityEmoji[e.quality].repeat(e.quality)}</div>
                   {e.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic",marginTop:2}}>{e.notes}</div>}
                 </div>
                 <div style={{display:"flex",gap:4}}>
