@@ -128,9 +128,24 @@ function getProteinTarget(exLogs){
   },0);
   return[65,75,80,90][best];
 }
+function calcExCal(entry){
+  const a=ACTIVITIES.find(x=>x.id===entry.activityId);
+  if(!a)return 0;
+  // For walking: use distance if available (more accurate than time)
+  if(entry.activityId==="walking"&&entry.distance&&entry.distanceUnit){
+    const d=parseFloat(entry.distance)||0;
+    var km=d;
+    if(entry.distanceUnit==="blocks")km=d*0.08;
+    else if(entry.distanceUnit==="miles")km=d*1.6;
+    // ~62 kcal/km for ~44kg person walking
+    return Math.round(km*62);
+  }
+  return a.cal||0;
+}
+
 function getCalTarget(exLogs,base=1800){
   if(!exLogs||!exLogs.length)return base;
-  const burned=exLogs.reduce((s,e)=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return s+(a?a.cal:0);},0);
+  const burned=exLogs.reduce(function(s,e){return s+calcExCal(e);},0);
   return base+Math.round(burned*0.6);
 }
 function computeTotals(fl){
@@ -797,8 +812,6 @@ function EditNameArea({value, onChange}){
   );
 }
 
-
-// ─── VOICE COMMAND CENTER ────────────────────────────────────────────────────
 async function parseVoiceCommand(transcript, profile, exLogs){
   var hr = new Date().getHours();
   var meal = hr<11?"breakfast":hr<14?"lunch":hr<17?"snack":"dinner";
@@ -958,7 +971,7 @@ function VoiceMicButton({onResult}){
 }
 
 
-function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry,setExLogs,sleepLog,setSleepLog}){
+function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,setTakenToday,exLogs,pantry}){
   const[foodInput,setFoodInput]=useState("");
   const[parsing,setParsing]=useState(false);
   const[parseResult,setParseResult]=useState(null);
@@ -971,7 +984,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const[voiceOpen,setVoiceOpen]=useState(false);
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
-  const[expandedMeals,setExpandedMeals]=useState({breakfast:true,lunch:true,dinner:true,snack:true});
 
   const totals=computeTotals(foodLog);
   const proteinTarget=getProteinTarget(exLogs);
@@ -1027,88 +1039,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
     setFoodLog(u);
     store.set("food-log-"+todayKey(),u);
     if(u.length===0) setCoachTip(null);
-  }
-
-  async function handleVoiceCommand(transcript,voiceImgs){
-    if(!transcript.trim())return;
-    setVoiceWorking(true);setVoiceResult(null);
-    var parsed=await parseVoiceCommand(transcript,profile,exLogs);
-    var actions=[];
-    var newFL=[...foodLog];
-    if(parsed.foods&&parsed.foods.length){
-      for(var fi=0;fi<parsed.foods.length;fi++){
-        var fd=parsed.foods[fi];
-        var res=await parseFood(fd.name,pantry,newFL);
-        if(res&&res.name&&!res.error){
-          var ml={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"};
-          newFL.push({id:Date.now()+Math.random(),name:res.name,
-            meal:fd.meal||"snack",mealLabel:ml[fd.meal]||"🍽",
-            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
-            nutrients:{sodium:res.sodium||0,calcium:res.calcium||0,calories:res.calories||0,
-              protein:res.protein||0,potassium:res.potassium||0,magnesium:res.magnesium||0},
-            oxalate:res.oxalate||"low",notes:res.notes||""});
-          actions.push("🍽 "+res.name+" — "+res.calories+"kcal, Na "+res.sodium+"mg, Ca "+res.calcium+"mg");
-        }
-      }
-      setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);
-    }
-    var newW=water;
-    if(parsed.water_glasses&&parsed.water_glasses>0){
-      newW=Math.min(profile.targets?.water_glasses||12,water+Math.round(parsed.water_glasses));
-      actions.push("💧 Water +"+Math.round(parsed.water_glasses)+" glasses → "+newW+" total");
-    }
-    if(parsed.water_liters&&parsed.water_liters>0){
-      var oz=profile.targets?.water_glass_oz||8;
-      var gl=Math.round(parsed.water_liters*1000/(oz*29.5));
-      newW=Math.min(profile.targets?.water_glasses||12,water+gl);
-      actions.push("💧 Water +"+parsed.water_liters+"L → "+newW+" glasses total");
-    }
-    if(newW!==water){setWater(newW);store.set("water-"+todayKey(),newW);}
-    if(parsed.exercise&&parsed.exercise.length&&setExLogs){
-      var newEx=[...exLogs];
-      for(var ei=0;ei<parsed.exercise.length;ei++){
-        var ex=parsed.exercise[ei];
-        var act=ACTIVITIES.find(function(a){return a.id===ex.type;})||
-                ACTIVITIES.find(function(a){return a.name.toLowerCase().indexOf((ex.type||"").toLowerCase())>=0;});
-        if(act){
-          var ee={id:Date.now()+Math.random(),activityId:act.id,
-            duration:ex.duration_min||act.duration,
-            time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})};
-          if(ex.distance){ee.distance=ex.distance;ee.distanceUnit=ex.distance_unit||"blocks";}
-          newEx.push(ee);
-          actions.push("💪 "+act.name+" "+ee.duration+"min"+(ex.distance?" "+ex.distance+" "+(ex.distance_unit||"blocks"):""));
-        }
-      }
-      setExLogs(newEx);store.set("ex-"+todayKey(),newEx);
-    }
-    if(parsed.sleep&&(parsed.sleep.bedtime||parsed.sleep.hours)&&setSleepLog){
-      var sh=parsed.sleep.hours||null;
-      if(!sh&&parsed.sleep.bedtime&&parsed.sleep.waketime){
-        var bp=parsed.sleep.bedtime.split(":");var wp=parsed.sleep.waketime.split(":");
-        if(bp.length===2&&wp.length===2){
-          var sm=(parseInt(wp[0])*60+parseInt(wp[1]))-(parseInt(bp[0])*60+parseInt(bp[1]));
-          if(sm<0)sm+=1440;sh=Math.round(sm/60*10)/10;
-        }
-      }
-      var sl={id:Date.now(),date:todayKey(),bedtime:parsed.sleep.bedtime||"",
-        waketime:parsed.sleep.waketime||"",hours:sh,quality:0,
-        notes:parsed.sleep.notes||"",aidTaken:false};
-      var nsl=[...(sleepLog||[]),sl];
-      setSleepLog(nsl);store.set("sleep-log",nsl);
-      actions.push("🌙 Sleep: "+(sh||"?")+"h logged");
-    }
-    if(parsed.skin_note){
-      localStorage.setItem("sn_skin-note-"+todayKey(),JSON.stringify(parsed.skin_note));
-      actions.push("✨ Skin note saved");
-    }
-    // If photos were included, analyze them too
-    if(voiceImgs&&voiceImgs.length>0){
-      var photoPrompt=transcript||"Analyze these food photos and tell me what you see with approximate portions.";
-      var photoReply=await callClaudeWithImages(voiceImgs,photoPrompt,"You are a health coach. Analyze food images and give nutrient estimates for the items shown.");
-      if(photoReply)actions.push("📷 "+photoReply.slice(0,200));
-    }
-    setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
-    setVoiceWorking(false);
   }
 
   const progToday=isProgDay(todayKey());
@@ -1195,7 +1125,6 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
           </div>
         }
       </div>
-
       <div className="day-ribbon">
         <div><div className="ribbon-label">Calories</div><div className="ribbon-val">{totals.calories}<span style={{fontSize:13,opacity:.7}}> / {calTarget}</span></div></div>
         <div style={{textAlign:"center"}}><div className="ribbon-label">Sodium</div><div className="ribbon-val">{totals.sodium}<span style={{fontSize:13,opacity:.7}}>mg</span></div></div>
@@ -1295,100 +1224,83 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
       </div>
 
       <p className="section-title" style={{marginTop:18}}>Today's food</p>
-      {foodLog.length===0
-        ?<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>
-        :(()=>{
-          const MEALS=[["breakfast","🌅"],["lunch","☀️"],["dinner","🌙"],["snack","🍎"]];
-          return MEALS.map(function(mv){
-            var mealId=mv[0];var mealEmoji=mv[1];
-            var items=foodLog.filter(function(f){return f.meal===mealId;});
-            if(!items.length)return null;
-            var mTotals=computeTotals(items);
-            var isOpen=expandedMeals&&expandedMeals[mealId]!==false;
+      {foodLog.length===0?(<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>):(
+        <div className="food-log">
+          {foodLog.map(f=>{
+            const isEditing=editingId===f.id&&editEntry;
             return(
-              <div key={mealId} style={{marginBottom:10,border:"1px solid var(--border)",borderRadius:12,overflow:"hidden",background:"white"}}>
-                {/* Meal header — tap to expand/collapse */}
-                <div onClick={function(){setExpandedMeals(function(p){var n={...p};n[mealId]=!isOpen;return n;});}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",cursor:"pointer",
-                    background:isOpen?"var(--green3)":"white"}}>
-                  <span style={{fontSize:18}}>{mealEmoji}</span>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:12,fontWeight:500,color:"var(--green)",textTransform:"capitalize"}}>{mealId}</div>
-                    <div style={{fontSize:10,color:"var(--ink3)",marginTop:1}}>
-                      {mTotals.calories} kcal · Na {mTotals.sodium}mg · Ca {mTotals.calcium}mg · {mTotals.protein}g prot · {items.length} item{items.length>1?"s":""}
-                    </div>
-                  </div>
-                  <span style={{fontSize:12,color:"var(--ink3)"}}>{isOpen?"▾":"▸"}</span>
+            <div className="food-entry" key={f.id} style={{flexDirection:"column",gap:6}}>
+              {/* Header row — always visible */}
+              <div style={{display:"flex",alignItems:"flex-start",gap:11,width:"100%"}}>
+                <div className="food-time"><div>{f.mealLabel||""}</div><div>{f.time}</div></div>
+                <div className="food-info" style={{flex:1}}>
+                  {isEditing?(
+                    /* EDIT MODE — textarea expands inside card */
+                    <EditNameArea
+                      value={editEntry.name}
+                      onChange={v=>setEditEntry({...editEntry,name:v})}
+                    />
+                  ):(
+                    <div className="food-name">{f.name}</div>
+                  )}
+                  {!isEditing&&(
+                    <>
+                      <div className="food-macros">
+                        {f.nutrients?.calories>0&&<span className="macro-tag">{f.nutrients.calories} kcal</span>}
+                        {f.nutrients?.sodium>0&&<span className={`macro-tag ${f.nutrients.sodium>400?"warn":""}`}>Na {f.nutrients.sodium}mg</span>}
+                        {f.nutrients?.calcium>0&&<span className="macro-tag">Ca {f.nutrients.calcium}mg</span>}
+                        {f.nutrients?.magnesium>0&&<span className="macro-tag hi">Mg {f.nutrients.magnesium}mg</span>}
+                        {f.nutrients?.protein>0&&<span className="macro-tag">{f.nutrients.protein}g prot</span>}
+                        {f.oxalate&&<span className={`ox-${f.oxalate}`}>ox {f.oxalate}</span>}
+                      </div>
+                      {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",marginTop:4,fontStyle:"italic"}}>{f.notes}</div>}
+                    </>
+                  )}
                 </div>
-                {/* Items - only shown when expanded */}
-                {isOpen&&(
-                  <div style={{borderTop:"1px solid var(--border)"}}>
-                    {items.map(function(f){
-                      var isEditing=editingId===f.id&&editEntry;
-                      return(
-                        <div key={f.id} style={{padding:"9px 13px",borderBottom:"1px solid var(--cream2)",display:"flex",flexDirection:"column",gap:4}}>
-                          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-                            <div style={{fontSize:9,color:"var(--ink3)",minWidth:38,flexShrink:0}}>
-                              <div>{f.time}</div>
-                            </div>
-                            <div style={{flex:1}}>
-                              {isEditing
-                                ?<EditNameArea value={editEntry.name} onChange={function(v){setEditEntry({...editEntry,name:v});}}/>
-                                :<div style={{fontSize:12,color:"var(--ink)",marginBottom:3}}>{f.name}</div>
-                              }
-                              {!isEditing&&(
-                                <>
-                                  <div className="food-macros">
-                                    {f.nutrients?.calories>0&&<span className="macro-tag">{f.nutrients.calories} kcal</span>}
-                                    {f.nutrients?.sodium>0&&<span className={"macro-tag "+(f.nutrients.sodium>400?"warn":"")}> Na {f.nutrients.sodium}mg</span>}
-                                    {f.nutrients?.calcium>0&&<span className="macro-tag">Ca {f.nutrients.calcium}mg</span>}
-                                    {f.nutrients?.protein>0&&<span className="macro-tag">{f.nutrients.protein}g prot</span>}
-                                    {f.oxalate&&<span className={"ox-"+f.oxalate}>ox {f.oxalate}</span>}
-                                  </div>
-                                  {f.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic",marginTop:2}}>{f.notes}</div>}
-                                </>
-                              )}
-                              {isEditing&&(
-                                <div style={{marginTop:6}}>
-                                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
-                                    {[["calories","kcal"],["sodium","Na mg"],["calcium","Ca mg"],["protein","prot g"]].map(function(kl){
-                                      return(
-                                        <div key={kl[0]} style={{display:"flex",alignItems:"center",gap:4}}>
-                                          <span style={{fontSize:9,color:"var(--ink3)",minWidth:36}}>{kl[1]}</span>
-                                          <input type="number" className="text-input" style={{flex:1,padding:"3px 5px",fontSize:11}}
-                                            value={editEntry.nutrients[kl[0]]||0}
-                                            onChange={function(e){var k=kl[0];setEditEntry(function(prev){return{...prev,nutrients:{...prev.nutrients,[k]:Number(e.target.value)}};});}}/>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  <div style={{display:"flex",gap:5}}>
-                                    <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={function(){
-                                      var u=foodLog.map(function(x){return x.id===editingId?{...editEntry}:x;});
-                                      setFoodLog(u);store.set("food-log-"+todayKey(),u);setEditingId(null);setEditEntry(null);
-                                    }}>Save</button>
-                                    <button className="btn btn-outline btn-sm" onClick={function(){setEditingId(null);setEditEntry(null);}}>Cancel</button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            <div style={{display:"flex",gap:3,flexShrink:0}}>
-                              {!isEditing&&<button className="food-edit" onClick={function(){setEditingId(f.id);setEditEntry({...f,nutrients:{...f.nutrients}});}}>✏️</button>}
-                              <button className="food-delete" onClick={function(){removeFood(f.id);}}>×</button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                <div style={{display:"flex",gap:2,flexShrink:0}}>
+                  {!isEditing&&<button className="food-edit" onClick={()=>{setEditingId(f.id);setEditEntry({...f,nutrients:{...f.nutrients}});}}>✏️</button>}
+                  <button className="food-delete" onClick={()=>removeFood(f.id)}>×</button>
+                </div>
               </div>
+              {/* Nutrient editors — only in edit mode */}
+              {isEditing&&(
+                <div style={{paddingLeft:43}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
+                    {[["calories","kcal"],["sodium","Na mg"],["calcium","Ca mg"],["protein","prot g"],["magnesium","Mg mg"],["potassium","K mg"]].map(([key,label])=>(
+                      <div key={key} style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:9,color:"var(--ink3)",minWidth:36}}>{label}</span>
+                        <input type="number" className="text-input" style={{flex:1,padding:"4px 6px",fontSize:11}}
+                          value={editEntry.nutrients[key]||0}
+                          onChange={e=>setEditEntry({...editEntry,nutrients:{...editEntry.nutrients,[key]:Number(e.target.value)}})}/>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:4,marginBottom:6}}>
+                    {["low","med","high"].map(ox=>(
+                      <button key={ox} onClick={()=>setEditEntry({...editEntry,oxalate:ox})}
+                        style={{flex:1,padding:"4px",fontSize:9,border:"1px solid",borderRadius:6,cursor:"pointer",fontFamily:"monospace",
+                          background:editEntry.oxalate===ox?"var(--green)":"white",
+                          color:editEntry.oxalate===ox?"white":"var(--ink3)",
+                          borderColor:editEntry.oxalate===ox?"var(--green)":"var(--border)"}}>ox {ox}</button>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:5}}>
+                    <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
+                      const u=foodLog.map(x=>x.id===editingId?{...editEntry}:x);
+                      setFoodLog(u);store.set("food-log-"+todayKey(),u);setEditingId(null);setEditEntry(null);
+                    }}>Save</button>
+                    <button className="btn btn-outline btn-sm" onClick={()=>{setEditingId(null);setEditEntry(null);}}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
             );
-          });
-        })()
-      }
+          })}
+        </div>
+      )}
 
-      coachTip && foodLog.length>0 &&(
+      {/* FIX #2: Only show coachTip if there's food logged */}
+      {coachTip && foodLog.length>0 &&(
         <div style={{background:"var(--green3)",border:"1px solid var(--green2)",borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:11,color:"var(--green)",lineHeight:1.6}}>
           <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green2)",marginBottom:4}}>Coach tip</div>
           {coachTip}
@@ -1462,6 +1374,8 @@ function ExerciseTab({exLogs,setExLogs}){
   const[customDur,setCustomDur]=useState({});
   const[distance,setDistance]=useState({});
   const[distUnit,setDistUnit]=useState({});
+  const[editingExId,setEditingExId]=useState(null);
+  const[editEx,setEditEx]=useState(null);
 
   function logActivity(act){
     const dur=customDur[act.id]||act.duration;
@@ -1492,19 +1406,58 @@ function ExerciseTab({exLogs,setExLogs}){
           {exLogs.map(e=>{
             const act=ACTIVITIES.find(a=>a.id===e.activityId);
             if(!act)return null;
+            var isEditEx=editingExId===e.id&&editEx;
             return(
-              <div className="ex-log-item" key={e.id}>
-                <span style={{fontSize:20}}>{act.emoji}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,color:"var(--ink)"}}>{act.name}</div>
-                  <div style={{fontSize:10,color:"var(--ink3)"}}>
-                    {e.time} · {e.duration}min
-                    {e.distance&&` · ${e.distance} ${e.distanceUnit}`}
-                    {` · ${act.cal} cal · protein target ${act.protein}g`}
+              <div key={e.id} style={{background:"white",border:"1px solid var(--green2)",borderRadius:10,padding:"10px 13px",marginBottom:7}}>
+                {isEditEx?(
+                  <div>
+                    <div style={{fontSize:9,color:"var(--green)",marginBottom:8,letterSpacing:".1em",textTransform:"uppercase"}}>Edit entry</div>
+                    <div style={{display:"flex",gap:6,marginBottom:7,flexWrap:"wrap"}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Duration (min)</div>
+                        <input className="text-input" type="number" style={{width:"100%"}} value={editEx.duration} onChange={ev=>setEditEx({...editEx,duration:Number(ev.target.value)})}/>
+                      </div>
+                      {act.hasDistance&&(
+                        <>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Distance</div>
+                            <input className="text-input" type="number" style={{width:"100%"}} value={editEx.distance||""} onChange={ev=>setEditEx({...editEx,distance:ev.target.value})}/>
+                          </div>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Unit</div>
+                            <select className="text-input" style={{width:"100%"}} value={editEx.distanceUnit||"blocks"} onChange={ev=>setEditEx({...editEx,distanceUnit:ev.target.value})}>
+                              <option value="blocks">blocks</option>
+                              <option value="km">km</option>
+                              <option value="miles">miles</option>
+                            </select>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
+                        var u=exLogs.map(x=>x.id===editingExId?{...editEx}:x);
+                        setExLogs(u);store.set("ex-"+todayKey(),u);
+                        setEditingExId(null);setEditEx(null);
+                      }}>Save</button>
+                      <button className="btn btn-outline btn-sm" onClick={()=>{setEditingExId(null);setEditEx(null);}}>Cancel</button>
+                    </div>
                   </div>
-                  {act.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic"}}>{act.notes}</div>}
-                </div>
-                <button className="food-delete" onClick={()=>removeEx(e.id)}>×</button>
+                ):(
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20}}>{act.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,color:"var(--ink)"}}>{act.name}</div>
+                      <div style={{fontSize:10,color:"var(--ink3)"}}>
+                        {e.time}{e.duration?" · "+e.duration+"min":""}
+                        {e.distance?" · "+e.distance+" "+e.distanceUnit:""}
+                        {" · "+calcExCal(e)+" cal"}
+                      </div>
+                    </div>
+                    <button className="food-edit" onClick={()=>{setEditingExId(e.id);setEditEx({...e});}}>✏️</button>
+                    <button className="food-delete" onClick={()=>removeEx(e.id)}>×</button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1757,16 +1710,14 @@ function MedsTab({master,setMaster}){
         <div style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:10}}>Add by photo (optional)</div>
           {!scanPreview?(<div style={{marginBottom:12}}>
-              <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7,letterSpacing:".06em"}}>Photograph label to auto-fill — take front + back for best results</div>
+              <div style={{fontSize:10,color:"var(--ink3)",marginBottom:7}}>Take front + back for best results</div>
               <div style={{display:"flex",gap:7}}>
                 <label style={{flex:1,border:"2px dashed var(--border)",borderRadius:10,padding:"12px 8px",textAlign:"center",cursor:"pointer",background:"white",position:"relative"}}>
-                  <div style={{fontSize:20,marginBottom:3}}>📷</div>
-                  <div style={{fontSize:10,color:"var(--green)"}}>Take photo</div>
+                  <div style={{fontSize:20,marginBottom:3}}>📷</div><div style={{fontSize:10,color:"var(--green)"}}>Take photo</div>
                   <input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={e=>{if(e.target.files[0])handlePhotoScan(e.target.files[0]);e.target.value="";}}/>
                 </label>
                 <label style={{flex:1,border:"2px dashed var(--border)",borderRadius:10,padding:"12px 8px",textAlign:"center",cursor:"pointer",background:"white",position:"relative"}}>
-                  <div style={{fontSize:20,marginBottom:3}}>🖼</div>
-                  <div style={{fontSize:10,color:"var(--green)"}}>Choose photos</div>
+                  <div style={{fontSize:20,marginBottom:3}}>🖼</div><div style={{fontSize:10,color:"var(--green)"}}>Choose photos</div>
                   <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={e=>{if(e.target.files[0])handlePhotoScan(e.target.files[0]);e.target.value="";}}/>
                 </label>
               </div>
@@ -2417,13 +2368,17 @@ function PantryTab({pantry,setPantry}){
           <input className="text-input" style={{flex:1}} placeholder="Product name" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
           <button className={"mic-btn "+(micOn?"listening":"idle")} onClick={micOn?stopMic:startMic}>{micOn?"🔴":"🎤"}</button>
           {/* FIX #1: Multiple photos for pantry */}
-          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Take photo">
-            📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-              onChange={async e=>{if(!e.target.files.length)return;const imgs=await Promise.all(Array.from(e.target.files).map(f=>compressImage(f)));const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");setName(raw.slice(0,80)||"Scanned product");e.target.value="";}}/>
-          </label>
-          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Choose photos">
-            🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-              onChange={async e=>{if(!e.target.files.length)return;const imgs=await Promise.all(Array.from(e.target.files).map(f=>compressImage(f)));const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");setName(raw.slice(0,80)||"Scanned product");e.target.value="";}}/>
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
+            📷
+            <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
+              onChange={async e=>{
+                const files=Array.from(e.target.files);
+                if(!files.length)return;
+                const imgs=await Promise.all(files.map(f=>compressImage(f)));
+                const raw=await callClaudeWithImages(imgs,"Read the product name from these label photos. Return just the product name, nothing else.","Return only the product name.");
+                setName(raw.slice(0,80)||"Scanned product");
+                e.target.value="";
+              }}/>
           </label>
         </div>
         <div className="input-row">
@@ -2465,7 +2420,6 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const[voiceOpen,setVoiceOpen]=useState(false);
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
-  const[expandedMeals,setExpandedMeals]=useState({breakfast:true,lunch:true,dinner:true,snack:true});
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
@@ -2481,22 +2435,17 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   }
 
   async function send(text){
-    if((!text.trim()&&!stagedPhoto)||loading)return;
-    const displayText=text.trim()||(stagedPhoto?"[Photo]":"");
-    // Build user message for display
+    if((!text.trim()&&!stagedPhotos.length)||loading)return;
+    const displayText=text.trim()||(stagedPhotos.length?"[Photo]":"");
     const userMsg={role:"user",content:displayText};
     const newMsgs=[...(messages||[]),userMsg];
     setMessages(newMsgs);setInput("");setLoading(true);
     const systemPrompt=buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections);
     let reply;
-    if(stagedPhoto){
-      // Send photo + text to Claude
-      const photoPrompt=text.trim()
-        ?text
-        :"I'm sending you a photo. It might be a restaurant menu, a food plate, a product label, or something health-related. Based on my full health profile and today's log, give me your best advice.";
-      const fullPrompt=systemPrompt+"\n\n## USER PHOTO MESSAGE\n"+photoPrompt;
-      reply=await callClaudeWithImage(stagedPhoto.b64,stagedPhoto.mediaType,fullPrompt,"You are a health coach. Analyze the image in context of the user's full health profile above. Be specific and actionable.");
-      setStagedPhoto(null);
+    if(stagedPhotos.length){
+      const photoPrompt=text.trim()?text:"Analyze this image based on my full health profile. Be specific and actionable.";
+      reply=await callClaudeWithImages(stagedPhotos,systemPrompt+"\n\n"+photoPrompt,"You are a health coach.");
+      setStagedPhotos([]);
     } else {
       reply=await callClaude(newMsgs.map(m=>({role:m.role,content:m.content})),systemPrompt);
     }
@@ -2538,11 +2487,10 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
         <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>{listening?"🔴":"🎤"}</button>
-        {/* Camera — Take Photo */}
-        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Take photo">
+        {/* Camera button */}
+        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
           📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
         </label>
-        {/* Camera — Choose Photos (multiple) */}
         <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Choose photos">
           🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
         </label>
@@ -2772,48 +2720,10 @@ function OnboardingFlow({onComplete,existingProfile}){
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Date of birth *</div>
-                <div style={{display:"flex",gap:6}}>
-                  <select className="text-input" style={{flex:2}}
-                    value={dob?parseInt(dob.split("-")[1]):""}
-                    onChange={function(e){
-                      var p=dob?dob.split("-"):["","",""];
-                      var m=e.target.value.padStart(2,"0");
-                      setDob((p[0]||new Date().getFullYear())+"-"+m+"-"+(p[2]||"01"));
-                    }}>
-                    <option value="">Month</option>
-                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map(function(mn,i){
-                      return <option key={i+1} value={i+1}>{mn}</option>;
-                    })}
-                  </select>
-                  <select className="text-input" style={{flex:1}}
-                    value={dob?parseInt(dob.split("-")[2]):""}
-                    onChange={function(e){
-                      var p=dob?dob.split("-"):["","",""];
-                      var d=e.target.value.padStart(2,"0");
-                      setDob((p[0]||new Date().getFullYear())+"-"+(p[1]||"01")+"-"+d);
-                    }}>
-                    <option value="">Day</option>
-                    {Array.from({length:31},function(_,i){return i+1;}).map(function(d){
-                      return <option key={d} value={d}>{d}</option>;
-                    })}
-                  </select>
-                  <select className="text-input" style={{flex:2}}
-                    value={dob?parseInt(dob.split("-")[0]):""}
-                    onChange={function(e){
-                      var p=dob?dob.split("-"):["","",""];
-                      setDob(e.target.value+"-"+(p[1]||"01")+"-"+(p[2]||"01"));
-                    }}>
-                    <option value="">Year</option>
-                    {Array.from({length:100},function(_,i){return new Date().getFullYear()-i;}).map(function(y){
-                      return <option key={y} value={y}>{y}</option>;
-                    })}
-                  </select>
-                </div>
-                {dob&&dob.split("-")[0]&&dob.split("-")[1]&&dob.split("-")[2]&&(function(){
-                  var b=new Date(dob);var t=new Date();
-                  var age=t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);
-                  return <div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>Age: {age}</div>;
-                })()}
+                <input className="text-input" style={{width:"100%"}} type="date" value={dob} onChange={e=>setDob(e.target.value)}/>
+                {dob&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>
+                  Age: {(()=>{const b=new Date(dob);const t=new Date();return t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);})()}
+                </div>}
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Weight</div>
@@ -3565,10 +3475,10 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.16</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.13</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
-        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry} setExLogs={setExLogs} sleepLog={sleepLog} setSleepLog={setSleepLog}/>}
+        {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry}/>}
         {tab==="history"&&<HistoryTab sleepLog={sleepLog}/>}
         {tab==="exercise"&&<ExerciseTab exLogs={exLogs} setExLogs={setExLogs}/>}
         {tab==="skincare"&&<SkincareTab skChecks={skChecks} setSkChecks={setSkChecks} skinProducts={skinProducts} setSkinProducts={setSkinProducts}/>}
