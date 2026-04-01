@@ -128,24 +128,9 @@ function getProteinTarget(exLogs){
   },0);
   return[65,75,80,90][best];
 }
-function calcExCal(entry){
-  const a=ACTIVITIES.find(x=>x.id===entry.activityId);
-  if(!a)return 0;
-  // For walking: use distance if available (more accurate than time)
-  if(entry.activityId==="walking"&&entry.distance&&entry.distanceUnit){
-    const d=parseFloat(entry.distance)||0;
-    var km=d;
-    if(entry.distanceUnit==="blocks")km=d*0.08;
-    else if(entry.distanceUnit==="miles")km=d*1.6;
-    // ~62 kcal/km for ~44kg person walking
-    return Math.round(km*62);
-  }
-  return a.cal||0;
-}
-
 function getCalTarget(exLogs,base=1800){
   if(!exLogs||!exLogs.length)return base;
-  const burned=exLogs.reduce((s,e)=>{return s+calcExCal(e);},0);
+  const burned=exLogs.reduce((s,e)=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return s+(a?a.cal:0);},0);
   return base+Math.round(burned*0.6);
 }
 function computeTotals(fl){
@@ -585,53 +570,209 @@ function compressImage(file, maxWidth=800, quality=0.75) {
 }
 
 function useVoice(onResult){
-  const[listening,setListening]=useState(false);
+  const [listening,setListening]=useState(false);
   const recRef=useRef(null);
-  const goRef=useRef(false);
-  const accumRef=useRef("");
-
   function startListening(){
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){alert("Voice input not supported. Use Safari on iPhone.");return;}
-    accumRef.current="";
-    goRef.current=true;
-    setListening(true);
-    function makeRec(){
-      var rec=new SR();
-      rec.lang="en-US";rec.continuous=true;rec.interimResults=false;
-      rec.onresult=function(e){
-        for(var i=e.resultIndex;i<e.results.length;i++){
-          if(e.results[i].isFinal){
-            accumRef.current+=(accumRef.current?" ":"")+e.results[i][0].transcript;
-          }
-        }
-        onResult(accumRef.current);
-      };
-      rec.onerror=function(e){if(e.error!=="no-speech")console.warn("mic:",e.error);};
-      rec.onend=function(){
-        if(goRef.current){
-          try{rec.start();}catch(err){
-            setTimeout(function(){if(goRef.current)makeRec();},300);
-          }
-        }
-      };
-      try{rec.start();recRef.current=rec;}catch(e){console.warn(e);}
-    }
-    makeRec();
+    const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
+    const rec=new SpeechRecognition();
+    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
+    rec.onerror=()=>setListening(false);
+    rec.onend=()=>setListening(false);
+    rec.start();recRef.current=rec;setListening(true);
   }
-
-  function stopListening(){
-    goRef.current=false;
-    var r=recRef.current;recRef.current=null;
-    if(r)try{r.stop();}catch(e){}
-    setListening(false);
-    accumRef.current="";
-  }
-
+  function stopListening(){recRef.current?.stop();setListening(false);}
   return{listening,startListening,stopListening};
 }
 
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const STYLE=`
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300&family=DM+Mono:wght@300;400&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{--cream:#F7F3EC;--cream2:#EFE9DE;--green:#2C4A3E;--green2:#3D6354;--green3:#e8f0ec;--terra:#B85C38;--terra2:#F2DDD3;--gold:#C4943A;--gold2:#FFF8E7;--ink:#1C1C1A;--ink2:#4A4845;--ink3:#8A8680;--border:#DDD8CE;--blue:#2563a8;--blue2:#EEF4FF;--rose:#9B4A6B;--rose2:#F9EDF4;}
+  body{background:var(--cream);font-family:'DM Mono',monospace;color:var(--ink)}
+  .app{min-height:100vh;max-width:820px;margin:0 auto;padding:0 0 80px}
+  .header{padding:24px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between}
+  .header-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:300;color:var(--green)}
+  .header-date{font-size:10px;color:var(--ink3);letter-spacing:.1em;text-transform:uppercase}
 
+  /* FIX #5: Tab bar — no flex:1, natural widths, scrollable */
+  .nav{display:flex;border-bottom:1px solid var(--border);background:var(--cream);position:sticky;top:0;z-index:10;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .nav::-webkit-scrollbar{display:none}
+  .nav-btn{flex:0 0 auto;padding:12px 10px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;background:none;border:none;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+  .nav-btn.active{color:var(--green);border-bottom-color:var(--green)}
+
+  .section{padding:18px}
+  .section-title{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:400;color:var(--green);margin-bottom:14px}
+  .day-ribbon{background:var(--green);color:white;border-radius:12px;padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+  .ribbon-label{font-size:8px;letter-spacing:.12em;text-transform:uppercase;opacity:.7;margin-bottom:2px}
+  .ribbon-val{font-family:'Cormorant Garamond',serif;font-size:20px}
+  .water-track{display:flex;align-items:center;gap:10px;background:var(--green3);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+  .water-glasses{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+  .water-glass{width:18px;height:24px;border-radius:3px 3px 4px 4px;border:1.5px solid var(--green2);cursor:pointer;background:none;transition:all .15s}
+  .water-glass.filled{background:var(--green2)}
+  .water-label{font-size:9px;color:var(--green);letter-spacing:.08em;text-transform:uppercase}
+  .water-count{font-family:'Cormorant Garamond',serif;font-size:18px;color:var(--green)}
+  .status-strip{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .status-pill{padding:6px 12px;border-radius:20px;font-size:10px;display:flex;align-items:center;gap:5px}
+  .status-pill.prog{background:var(--rose2);color:var(--rose)}
+  .status-pill.prog-off{background:var(--cream2);color:var(--ink3)}
+  .status-pill.ex{background:var(--green3);color:var(--green2)}
+  .status-pill.protein{background:var(--blue2);color:var(--blue)}
+  .master-item{background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;transition:all .2s}
+  .master-item.taken{border-color:var(--green2);background:var(--green3)}
+  .master-item.medication{border-left:3px solid var(--blue)}
+  .master-item.medication.taken{border-left-color:var(--green2)}
+  .master-header{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+  .master-check{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);background:white;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;transition:all .2s}
+  .master-check.checked{background:var(--green);border-color:var(--green);color:white}
+  .master-name{font-size:13px;color:var(--ink);flex:1}
+  .master-dose{font-size:10px;color:var(--ink3)}
+  .master-notes{font-size:10px;color:var(--ink3);margin-top:5px;font-style:italic;line-height:1.5}
+  .master-notes.warn{color:var(--terra)}
+  .supp-synergies{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:7px}
+  .synergy-alert{border-radius:8px;padding:9px 11px;display:flex;gap:8px;align-items:flex-start}
+  .synergy-alert.unmet{background:var(--gold2);border:1px solid #f5d87a}
+  .synergy-alert.met{background:var(--green3);border:1px solid #b2dfdb}
+  .syn-label{font-size:11px;color:var(--ink);margin-bottom:2px}
+  .syn-why{font-size:10px;color:var(--ink3);line-height:1.4;margin-bottom:4px}
+  .syn-foods{font-size:10px;color:var(--green2)}
+  .syn-bar-track{height:3px;background:rgba(0,0,0,.08);border-radius:2px;overflow:hidden;margin-top:4px}
+  .syn-bar-fill{height:100%;border-radius:2px;transition:width .4s}
+  .syn-bar-fill.unmet{background:var(--gold)}.syn-bar-fill.met{background:var(--green2)}
+  .syn-pct{font-size:9px;color:var(--ink3);margin-top:2px}
+  .cat-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin:14px 0 8px;border-bottom:1px solid var(--border);padding-bottom:5px;display:flex;align-items:center;gap:8px}
+  .cat-badge{background:var(--blue2);color:var(--blue);padding:2px 7px;border-radius:20px;font-size:8px}
+  .nutrient-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  .nutrient-card{background:white;border:1px solid var(--border);border-radius:10px;padding:11px 13px}
+  .nutrient-name{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px}
+  .nutrient-value{font-family:'Cormorant Garamond',serif;font-size:16px;color:var(--ink);margin-bottom:5px}
+  .nutrient-value span{font-size:10px;color:var(--ink3);font-family:'DM Mono',monospace}
+  .bar-track{height:3px;background:var(--cream2);border-radius:2px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:2px;transition:width .4s}
+  .bar-ok{background:var(--green2)}.bar-warn{background:var(--gold)}.bar-over{background:var(--terra)}
+  .nutrient-note{font-size:9px;color:var(--ink3);margin-top:3px}
+  .food-log{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+  .food-entry{background:white;border:1px solid var(--border);border-radius:10px;padding:11px 13px;display:flex;align-items:flex-start;gap:11px}
+  .food-time{font-size:10px;color:var(--ink3);min-width:32px;padding-top:2px}
+  .food-info{flex:1}
+  .food-name{font-size:12px;color:var(--ink);margin-bottom:3px}
+  .food-macros{font-size:10px;display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+  .macro-tag{background:var(--cream2);padding:2px 7px;border-radius:20px;color:var(--ink3)}
+  .macro-tag.warn{background:var(--terra2);color:var(--terra)}
+  .macro-tag.hi{background:var(--green3);color:var(--green)}
+  .food-edit{background:var(--cream2);border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--ink2);font-size:14px;opacity:1;transition:opacity .2s;padding:4px 7px;flex-shrink:0}
+  .food-edit:hover{opacity:1;color:var(--green2)}
+  .food-delete{background:none;border:none;cursor:pointer;color:var(--ink3);font-size:17px;opacity:.4;transition:opacity .2s}
+  .food-delete:hover{opacity:1;color:var(--terra)}
+  .ox-low{background:#e8f5e9;color:#2e7d32;font-size:9px;padding:2px 7px;border-radius:20px}
+  .ox-med{background:#fff3e0;color:#e65100;font-size:9px;padding:2px 7px;border-radius:20px}
+  .ox-high{background:#fce4ec;color:#c62828;font-size:9px;padding:2px 7px;border-radius:20px}
+  .add-food-area{background:var(--cream2);border:1px dashed var(--border);border-radius:10px;padding:13px}
+  .add-food-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:9px}
+  .input-row{display:flex;gap:7px;margin-bottom:7px;flex-wrap:wrap}
+  .text-input{font-family:'DM Mono',monospace;font-size:12px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:white;color:var(--ink);outline:none;transition:border .2s}
+  .text-input:focus{border-color:var(--green2)}
+  .text-input::placeholder{color:var(--ink3)}
+  .btn{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:9px 15px;border-radius:8px;border:none;cursor:pointer;transition:all .2s;white-space:nowrap}
+  .btn-primary{background:var(--green);color:white}
+  .btn-primary:hover{background:var(--green2)}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-outline{background:none;color:var(--green);border:1px solid var(--green)}
+  .btn-outline:hover{background:var(--green3)}
+  .btn-sm{padding:6px 11px;font-size:9px}
+  .parse-result{background:var(--green3);border:1px solid #b2dfdb;border-radius:8px;padding:9px 12px;margin-top:7px;font-size:11px;line-height:1.6}
+  .parse-result strong{color:var(--green)}
+  .add-note{font-size:10px;color:var(--ink3);margin-top:5px}
+  .mic-btn{width:38px;height:38px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s;flex-shrink:0}
+  .mic-btn.idle{background:var(--cream2);color:var(--ink3)}
+  .mic-btn.listening{background:var(--terra);color:white;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+  /* FIX: photo preview strip */
+  .photo-strip{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .photo-thumb{position:relative;width:60px;height:60px}
+  .photo-thumb img{width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+  .photo-thumb-remove{position:absolute;top:-5px;right:-5px;background:var(--terra);color:white;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+  .photo-add-btn{width:60px;height:60px;border-radius:6px;border:2px dashed var(--border);background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--ink3);position:relative;flex-shrink:0}
+  .photo-add-btn:hover{border-color:var(--green2);background:var(--green3)}
+  .photo-add-btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .photo-add-label{font-size:8px;color:var(--ink3);margin-top:2px;letter-spacing:.05em}
+  /* exercise */
+  .ex-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .ex-card{background:white;border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:all .2s;text-align:center}
+  .ex-card:hover{border-color:var(--green2)}
+  .ex-card.logged{border-color:var(--green2);background:var(--green3)}
+  .ex-emoji{font-size:22px;margin-bottom:4px}
+  .ex-name{font-size:11px;color:var(--ink);margin-bottom:2px}
+  .ex-detail{font-size:9px;color:var(--ink3)}
+  .ex-log-item{background:white;border:1px solid var(--green2);border-radius:8px;padding:10px 13px;margin-bottom:7px;display:flex;align-items:center;gap:10px}
+  /* skincare */
+  .sk-section{background:white;border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:10px}
+  .sk-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:10px}
+  .sk-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--cream2)}
+  .sk-item:last-child{border-bottom:none}
+  .sk-check{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:white;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;cursor:pointer;transition:all .2s}
+  .sk-check.done{background:var(--rose);border-color:var(--rose);color:white}
+  .sk-name{font-size:12px;color:var(--ink);flex:1}
+  .inj-item{background:white;border:1px solid var(--border);border-radius:8px;padding:10px 13px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between}
+  .inj-name{font-size:12px;color:var(--ink)}
+  .inj-detail{font-size:10px;color:var(--ink3);margin-top:2px}
+  .photo-zone{border:2px dashed var(--border);border-radius:12px;padding:18px;text-align:center;cursor:pointer;background:white;position:relative;transition:all .2s}
+  .photo-zone:hover{border-color:var(--green2);background:var(--green3)}
+  .photo-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .photo-preview{width:100%;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid var(--border)}
+  .scan-verdict{border-radius:12px;padding:14px 16px;margin-top:12px}
+  .scan-verdict.yes{background:#f0faf4;border:2px solid var(--green2)}
+  .scan-verdict.no{background:var(--terra2);border:2px solid var(--terra)}
+  .scan-verdict.caution{background:var(--gold2);border:2px solid #e6b800}
+  .verdict-badge{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:500;margin-bottom:7px;display:flex;align-items:center;gap:7px}
+  .verdict-badge.yes{color:var(--green2)}.verdict-badge.no{color:var(--terra)}.verdict-badge.caution{color:#946200}
+  .verdict-body{font-size:12px;line-height:1.7;color:var(--ink)}
+  .med-card{background:white;border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:10px}
+  .med-card-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .med-text{font-size:11px;color:var(--ink2);line-height:1.7;white-space:pre-wrap}
+  .pantry-item{background:white;border:1px solid var(--border);border-radius:8px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .profile-section{margin-bottom:20px}
+  .profile-section-title{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:5px}
+  .target-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .target-card{background:white;border:1px solid var(--border);border-radius:10px;padding:11px 13px}
+  .target-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:3px}
+  .target-input{width:100%;font-family:'DM Mono',monospace;font-size:13px;color:var(--ink);border:none;background:none;outline:none}
+  .restriction-tag{background:var(--terra2);color:var(--terra);font-size:11px;padding:7px 12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .condition-tag{background:var(--green3);color:var(--green);font-size:11px;padding:7px 12px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .remove-tag{background:none;border:none;cursor:pointer;font-size:15px;opacity:.5}
+  .chat-window{height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:11px;padding:13px;background:white;border:1px solid var(--border);border-radius:12px 12px 0 0}
+  .chat-window::-webkit-scrollbar{width:3px}
+  .chat-window::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .msg{max-width:85%}
+  .msg-user{align-self:flex-end}.msg-ai{align-self:flex-start}
+  .msg-bubble{padding:10px 13px;border-radius:12px;font-size:12px;line-height:1.7}
+  .msg-user .msg-bubble{background:var(--green);color:white;border-radius:12px 12px 2px 12px}
+  .msg-ai .msg-bubble{background:var(--cream2);color:var(--ink);border-radius:12px 12px 12px 2px}
+  .msg-ai .msg-bubble strong{color:var(--green)}
+  .msg-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:3px;padding:0 3px}
+  .msg-user .msg-label{text-align:right}
+  .chat-input-area{display:flex;gap:6px;border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px;padding:9px;background:var(--cream2)}
+  .chat-input{flex:1;font-family:'DM Mono',monospace;font-size:12px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:white;color:var(--ink);outline:none;resize:none}
+  .chat-input:focus{border-color:var(--green2)}
+  .quick-prompts{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .quick-btn{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.07em;padding:5px 9px;border-radius:20px;border:1px solid var(--border);background:white;color:var(--ink2);cursor:pointer;transition:all .15s}
+  .quick-btn:hover,.quick-btn:active{background:var(--green);color:white;border-color:var(--green)}
+  .loading-spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .typing-dot{display:inline-block;width:5px;height:5px;background:var(--green2);border-radius:50%;animation:bounce 1.2s infinite;margin-right:2px}
+  .typing-dot:nth-child(2){animation-delay:.2s}.typing-dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+  .empty-state{text-align:center;padding:24px;color:var(--ink3);font-size:11px}
+  .empty-icon{font-size:26px;margin-bottom:6px}
+  select.text-input{appearance:none;cursor:pointer}
+  textarea.text-input{resize:vertical}
+  @media(max-width:500px){.nutrient-grid,.target-grid,.ex-grid{grid-template-columns:1fr}}
+`;
+
+// ─── TODAY TAB ────────────────────────────────────────────────────────────────
+// EditNameArea — textarea with autoFocus and cursor at end
 function EditNameArea({value, onChange}){
   const ref=useRef(null);
   useEffect(()=>{
@@ -1321,8 +1462,6 @@ function ExerciseTab({exLogs,setExLogs}){
   const[customDur,setCustomDur]=useState({});
   const[distance,setDistance]=useState({});
   const[distUnit,setDistUnit]=useState({});
-  const[editingExId,setEditingExId]=useState(null);
-  const[editEx,setEditEx]=useState(null);
 
   function logActivity(act){
     const dur=customDur[act.id]||act.duration;
@@ -1335,7 +1474,7 @@ function ExerciseTab({exLogs,setExLogs}){
   function removeEx(id){const u=exLogs.filter(e=>e.id!==id);setExLogs(u);store.set("ex-"+todayKey(),u);}
 
   const proteinTarget=getProteinTarget(exLogs);
-  const calBurned=exLogs.reduce((s,e)=>{return s+calcExCal(e);},0);
+  const calBurned=exLogs.reduce((s,e)=>{const a=ACTIVITIES.find(x=>x.id===e.activityId);return s+(a?a.cal:0);},0);
 
   return(
     <div className="section">
@@ -1354,59 +1493,18 @@ function ExerciseTab({exLogs,setExLogs}){
             const act=ACTIVITIES.find(a=>a.id===e.activityId);
             if(!act)return null;
             return(
-              <div key={e.id} style={{background:"white",border:"1px solid var(--green2)",borderRadius:10,padding:"10px 13px",marginBottom:7}}>
-                {editingExId===e.id&&editEx?(
-                  <div>
-                    <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--green)",marginBottom:8}}>Edit entry</div>
-                    <div style={{display:"flex",gap:6,marginBottom:7,flexWrap:"wrap"}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Duration (min)</div>
-                        <input className="text-input" type="number" style={{width:"100%"}}
-                          value={editEx.duration} onChange={e=>setEditEx({...editEx,duration:Number(e.target.value)})}/>
-                      </div>
-                      {act.hasDistance&&(
-                        <>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Distance</div>
-                            <input className="text-input" type="number" style={{width:"100%"}}
-                              value={editEx.distance||""} onChange={e=>setEditEx({...editEx,distance:e.target.value})}/>
-                          </div>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:9,color:"var(--ink3)",marginBottom:3}}>Unit</div>
-                            <select className="text-input" style={{width:"100%"}}
-                              value={editEx.distanceUnit||"blocks"} onChange={e=>setEditEx({...editEx,distanceUnit:e.target.value})}>
-                              <option value="blocks">blocks</option>
-                              <option value="km">km</option>
-                              <option value="miles">miles</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div style={{display:"flex",gap:6}}>
-                      <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
-                        const u=exLogs.map(x=>x.id===editingExId?{...editEx}:x);
-                        setExLogs(u);store.set("ex-"+todayKey(),u);
-                        setEditingExId(null);setEditEx(null);
-                      }}>Save</button>
-                      <button className="btn btn-outline btn-sm" onClick={()=>{setEditingExId(null);setEditEx(null);}}>Cancel</button>
-                    </div>
+              <div className="ex-log-item" key={e.id}>
+                <span style={{fontSize:20}}>{act.emoji}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"var(--ink)"}}>{act.name}</div>
+                  <div style={{fontSize:10,color:"var(--ink3)"}}>
+                    {e.time} · {e.duration}min
+                    {e.distance&&` · ${e.distance} ${e.distanceUnit}`}
+                    {` · ${act.cal} cal · protein target ${act.protein}g`}
                   </div>
-                ):(
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:20}}>{act.emoji}</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:12,color:"var(--ink)"}}>{act.name}</div>
-                      <div style={{fontSize:10,color:"var(--ink3)"}}>
-                        {e.time}{e.duration?" · "+e.duration+"min":""}
-                        {e.distance?" · "+e.distance+" "+e.distanceUnit:""}
-                        {" · "+calcExCal(e)+" cal"}
-                      </div>
-                    </div>
-                    <button className="food-edit" onClick={()=>{setEditingExId(e.id);setEditEx({...e});}}>✏️</button>
-                    <button className="food-delete" onClick={()=>removeEx(e.id)}>×</button>
-                  </div>
-                )}
+                  {act.notes&&<div style={{fontSize:10,color:"var(--ink3)",fontStyle:"italic"}}>{act.notes}</div>}
+                </div>
+                <button className="food-delete" onClick={()=>removeEx(e.id)}>×</button>
               </div>
             );
           })}
@@ -3467,7 +3565,7 @@ function App(){
       <div className="app">
         <div className="header">
           <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
-          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.17</div></div>
+          <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.16</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
         {tab==="today"&&<TodayTab foodLog={foodLog} setFoodLog={setFoodLog} water={water} setWater={setWater} profile={profile} master={master} takenToday={takenToday} setTakenToday={setTakenToday} exLogs={exLogs} pantry={pantry} setExLogs={setExLogs} sleepLog={sleepLog} setSleepLog={setSleepLog}/>}
