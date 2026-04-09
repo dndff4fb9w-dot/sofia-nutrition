@@ -13,6 +13,7 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     body{margin:0;background:#F7F3EC}
     #splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#F7F3EC;gap:14px;font-family:Georgia,serif}
@@ -67,57 +68,9 @@ const PROG_CYCLES = [
 function isProgDay(k){return PROG_CYCLES.some(c=>k>=c.start&&k<=c.end);}
 function daysUntilProg(k){const n=PROG_CYCLES.find(c=>c.start>k);if(!n)return null;const diff=Math.ceil((new Date(n.start)-new Date(k))/(86400000));return diff;}
 
-const DEFAULT_MASTER = [
-  {id:"vit-d-zinc",name:"Vitamin D3 + Zinc",dose:"",category:"supplement",time:"morning",notes:"",paused:false,
-   synergies:[
-     {nutrient:"magnesium_mg",threshold:200,label:"Magnesium from food",why:"Magnesium activates Vitamin D — without it your D is only partially effective.",foods:"avocado, banana, oats, salmon"},
-     {nutrient:"calcium_mg",threshold:400,label:"Calcium from food",why:"Vitamin D's job is absorbing calcium — you need dietary calcium for it to work.",foods:"dairy, yogurt, sardines"},
-   ]},
-  {id:"b-complex",name:"B6 + Folic Acid + B12",dose:"1000mcg B12 / 800mcg Folate / 2mg B6",category:"supplement",time:"morning",notes:"Trader Joe's. Critical with HRT — estrogen affects folate metabolism.",paused:false,
-   synergies:[{nutrient:"protein_g",threshold:15,label:"Protein with breakfast",why:"B vitamins absorb better with food.",foods:"eggs, yogurt, smoked salmon"}]},
-  {id:"omega3",name:"Omega-3 Fish Oil",dose:"2500mg (2 softgels)",category:"supplement",time:"with meals",notes:"Viva Naturals Triple Strength — 1500mg EPA, 570mg DHA.",paused:false,synergies:[]},
-  {id:"calcium-citrate",name:"Calcium Citrate",dose:"2,377mg",category:"supplement",time:"with meals",notes:"ALWAYS with meals — never alone. Binds oxalate in gut.",paused:false,
-   synergies:[{nutrient:"calories",threshold:200,label:"Take with a real meal",why:"Calcium citrate absorbs best with food, not alone.",foods:"any full meal"}]},
-  {id:"estradiol",name:"Estradiol Gel",dose:"",category:"supplement",time:"morning",notes:"HRT estrogen. Apply to skin daily as prescribed.",paused:false,synergies:[]},
-  {id:"minoxidil",name:"Minoxidil",dose:"2.5mg",category:"supplement",time:"morning",notes:"Oral. Take at same time daily — consistency is key.",paused:false,synergies:[]},
-  {id:"magnesium-powder",name:"Magnesium Glycinate Powder",dose:"¼ tsp (≈100mg) → build to ½ tsp (≈200mg)",category:"supplement",time:"night",notes:"Restarting after belly issues. Week 1: ¼ tsp with dinner. Week 2: ½ tsp.",paused:false,
-   synergies:[{nutrient:"protein_g",threshold:20,label:"Protein at dinner",why:"Glycinate is amino-acid based — take with a meal that has protein.",foods:"fish, eggs, legumes, yogurt"}]},
-  {id:"sleep-aid",name:"Kirkland Sleep Aid",dose:"",category:"supplement",time:"night",notes:"As needed — not every night.",paused:false,synergies:[]},
-  {id:"progesterone",name:"Progesterone",dose:"200mg",category:"medication",time:"night",notes:"HRT — 12 days/month. Cycle dates tracked automatically in app.",paused:false,synergies:[]},
-  {id:"alplax",name:"Alplax (Alprazolam)",dose:"0.5mg",category:"medication",time:"as needed",notes:"For dental/oral surgery — to sleep when can't use retainers. Not daily.",paused:false,synergies:[]},
-  {id:"valium",name:"Valium (Diazepam)",dose:"10mg",category:"medication",time:"as needed",notes:"For dental/oral surgery situations. Not daily use.",paused:false,synergies:[]},
-  {id:"paracetamol",name:"Paracetamol",dose:"500mg",category:"medication",time:"as needed",notes:"Pain/fever. Max 4g/day. Kidney-safe at normal doses.",paused:false,synergies:[]},
-  {id:"tylenol",name:"Tylenol",dose:"325mg",category:"medication",time:"as needed",notes:"Same as Paracetamol (acetaminophen). Don't double up with Paracetamol.",paused:false,synergies:[]},
-  {id:"actron",name:"Actron (Ibuprofen)",dose:"600mg",category:"medication",time:"as needed",notes:"⚠ NSAID — stresses kidneys. Use with caution and only if necessary. Take with food.",paused:false,synergies:[]},
-  {id:"propranolol",name:"Propranolol Gador",dose:"40mg",category:"medication",time:"as needed",notes:"Beta-blocker. Argentine brand. For heart rate/anxiety/migraine as prescribed.",paused:false,synergies:[]},
-];
+const DEFAULT_MASTER = [];
 
-const DEFAULT_MEDICAL = {
-  kidney:`KIDNEY STONES (bilateral, multiple small — Dr. Zanchetta protocol):
-• Sodium ≤1500mg/day — sodium increases urinary calcium excretion = more stones
-• Oxalate: LOW. High-oxalate: spinach, almonds, cashews, beets, chocolate, peanuts, rhubarb
-• Calcium ~1000mg/day ALWAYS WITH MEALS — binds oxalate in gut, prevents absorption. Never alone.
-• Hydration: min 2.5L/day — #1 prevention
-• Lemon water daily — citrate prevents stone formation
-• Animal protein: moderate, spread across meals (purines → uric acid → stones)
-• Calcium citrate 2,377mg supplement with meals`,
-  hrt:`HRT (started December 2024):
-• Estradiol gel daily (estrogen component)
-• Progesterone 200mg: 12 days/month — cycles tracked in app
-• HRT improving knee pain (possible chondromalacia/patella tracking issue)
-• Estrogen affects folate metabolism → B6/Folate/B12 supplementation essential
-• Weight: was 42kg, now ~44kg — possibly progesterone-related water retention`,
-  nerve:`SUBSCAPULAR NERVE CONDITION (right arm):
-• Significant improvement with current protocol
-• Treatment: massage + elastic band exercises + red light therapy
-• May discontinue one element soon
-• Daily: arm band rehab exercises`,
-  other:`OTHER:
-• Oral health: thick tongue coating, pasty mouth — likely dry mouth side effect from medications
-• No bruxism but wears retainers — Alplax/Valium for dental surgery situations
-• Skin: photoaging focus — dedicated face and hand routine
-• Weight: 44kg current`
-};
+const DEFAULT_MEDICAL = {};
 
 function getProteinTarget(exLogs){
   if(!exLogs||!exLogs.length)return 65;
@@ -244,7 +197,7 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
     // If photos were included, analyze them too
     if(voiceImgs&&voiceImgs.length>0){
       var photoPrompt=transcript||"Analyze these food photos and tell me what you see with approximate portions.";
-      var photoReply=await callClaudeWithImages(voiceImgs,photoPrompt,"You are a health coach. Analyze food images and give nutrient estimates for the items shown.");
+      var photoReply=await callClaudeWithImages(voiceImgs,photoPrompt,"You are Salus, a personal health AI. Analyze food images and give nutrient estimates for the items shown.");
       if(photoReply)actions.push("📷 "+photoReply.slice(0,200));
     }
     setVoiceResult({actions:actions,question:parsed.question,transcript:transcript});
@@ -296,65 +249,66 @@ function buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,
   const restrictions=profile.restrictions||[];
   const conditions=profile.conditions||[];
 
-  return `You are ${profile.name||"the user"}'s personal health compliance coach. Expert, warm, direct, specific. No disclaimers.
-CRITICAL DIET: ${restrictions.join(", ")||"check profile"}.
-CONDITIONS: ${conditions.join(", ")||"see medical context"}.
+  // Build condition-specific rules dynamically — universal, not hardcoded
+  var condRules=[];
+  var cLow=(conditions||[]).map(function(c){return c.toLowerCase();});
+  var rLow=(restrictions||[]).map(function(r){return r.toLowerCase();});
+  if(cLow.some(function(c){return c.includes("kidney")||c.includes("stone")||c.includes("hypercalciuria");})){
+    condRules.push("KIDNEY STONES: Pair high-oxalate foods with calcium at SAME meal. Sodium drives calcium loss in urine — stay under target. Lemon/citrus water daily for citrate. Never restrict calcium. Flag spinach, nuts, chocolate, beets, tofu if eaten without calcium.");
+  }
+  if(cLow.some(function(c){return c.includes("diabetes");})){
+    condRules.push("DIABETES: Carbs and sugar are top priority. Fiber slows glucose spikes — prioritize. Avoid refined grains and added sugar. Protein at every meal stabilizes blood sugar. Flag any high-glycemic foods. Track A1C trends if available.");
+  }
+  if(cLow.some(function(c){return c.includes("hypertension")||c.includes("blood pressure");})){
+    condRules.push("HYPERTENSION: Sodium is critical — flag anything pushing toward daily limit. DASH principles apply. Potassium-rich foods help. Limit caffeine and alcohol.");
+  }
+  if(cLow.some(function(c){return c.includes("thyroid");})){
+    condRules.push("THYROID: Medication timing matters — most thyroid meds taken on empty stomach. Avoid soy, raw cruciferous vegetables, and high-fiber foods within 4 hours of medication. Iodine levels affect thyroid function.");
+  }
+  if(cLow.some(function(c){return c.includes("celiac")||c.includes("gluten");})||rLow.some(function(r){return r.includes("gluten");})){
+    condRules.push("CELIAC/GLUTEN-FREE: Flag any gluten sources (wheat, barley, rye, contaminated oats). Cross-contamination risk at restaurants. Check all sauces and processed foods.");
+  }
+  if(cLow.some(function(c){return c.includes("heart")||c.includes("cardiovascular")||c.includes("cholesterol");})){
+    condRules.push("HEART HEALTH: Saturated fat and cholesterol are priorities. Omega-3 rich foods (fish, flaxseed) are beneficial. Sodium management critical. Fiber helps lower LDL.");
+  }
+  if(cLow.some(function(c){return c.includes("osteoporosis")||c.includes("bone");})){
+    condRules.push("BONE HEALTH: Calcium and Vitamin D are critical every day. Weight-bearing exercise important. Limit alcohol and caffeine which leach calcium. Track calcium intake carefully.");
+  }
+  if(rLow.some(function(r){return r.includes("vegan")||r.includes("vegetarian");})){
+    condRules.push("PLANT-BASED: Monitor B12, iron, zinc, omega-3, and complete protein. Combine legumes and grains for complete amino acids. Fortified foods or supplements may be needed.");
+  }
+  // Always add universal rules
+  condRules.push("UNIVERSAL: Hydration is always tracked. Missed medications are always flagged. Connect symptoms across ALL tabs (sleep, skin, food, meds). Reference specific numbers. Notice what user wouldn't connect themselves.");
 
-## MEDICAL CONTEXT
-${medical.kidney||""}
-${medical.hrt||""}
-${medical.nerve||""}
-${medical.other||""}
-
-## TODAY — ${new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
-Weight: ${profile.weight_kg||44}kg | Age: ${profile.age||"unknown"}
-Exercise today: ${todayEx}
-Protein target today: ${proteinTarget}g | Calorie target: ${calTarget}kcal
-Progesterone today: ${progToday?"YES — progesterone day":daysUntil!==null?`No — ${daysUntil} days until next cycle`:"No active cycle"}
-Water: ${water} glasses (${Math.round(water*(profile.targets?.water_glass_oz||8)*29.5/1000*10)/10}L) / target ${profile.targets?.water_glasses||12} glasses
-Supplements taken: ${takenNames.join(", ")||"none checked"}
-⚠️ NOT YET TAKEN: ${missedMeds.join(", ")||"all taken or as-needed"}
-Synergy gaps: ${gaps.join(" | ")||"all met"}
-
-## SLEEP (integration)
-${sleepNote}
-${lastSleep&&lastSleep.hours<6?"⚠️ Poor sleep — suggest energy-supporting foods, extra hydration, flag if affecting adherence":""}
-${lastSleep&&lastSleep.aidTaken?"Note: sleep aid taken last night — check for any morning grogginess affecting medication timing":""}
-
-## SKIN NOTES (integration)
-${skinNotes.length?skinNotes.join(", "):"No recent skin notes"}
-If user mentions skin symptoms (pimples, itching, dryness, rash): cross-reference with HRT medications (estradiol/progesterone), recent diet changes, sleep quality, and hydration. Connect dots proactively.
-
-## UPCOMING PROCEDURES (integration)
-${upcoming.length?upcoming.join(", "):"None in next 7 days"}
-If procedure coming up: flag relevant prep (fasting, medication timing, hydration).
-
-## PAST 7 DAYS — ANIMAL PROTEIN SOURCES (integration)
-${past7Protein.length?past7Protein.join(", "):"No history available"}
-If same protein source appears 3+ times this week: suggest alternatives. Variety prevents uric acid buildup.
-
-## FOOD LOG TODAY
-${foodLog.map(f=>`${f.time} ${f.name} (Na:${f.nutrients?.sodium||0}mg Ca:${f.nutrients?.calcium||0}mg kcal:${f.nutrients?.calories||0} prot:${f.nutrients?.protein||0}g)`).join(", ")||"Nothing logged yet."}
-Running totals: Na ${totals.sodium}mg | Ca ${totals.calcium}mg | Mg ${totals.magnesium}mg | ${totals.calories}kcal | ${totals.protein}g protein
-
-## PANTRY (suggest from here first)
-${pantry.map(p=>p.name+(p.qty?" ("+p.qty+")":"")).join(", ")||"Not logged"}
-When suggesting food: check pantry first. If item already eaten today, suggest a DIFFERENT option from pantry or elsewhere.
-
-## CRITICAL RULES
-1. Oxalate + calcium at same meal = safe. Alone = stone risk.
-2. Vitamin D needs magnesium to activate.
-3. Lemon water daily = citrate = stone prevention.
-4. Sodium > ${profile.targets?.sodium_mg||1500}mg = calcium lost in urine = more stones.
-5. Animal protein in one sitting = uric acid load. Spread across meals.
-6. Hydration is #1. Flag if behind on water.
-7. NSAIDs (Actron/ibuprofen) = kidney stress. Always flag.
-8. B6/Folate/B12 critical — estrogen affects folate metabolism.
-9. Calcium ALWAYS with food — never alone.
-10. If missed meds flagged above — remind gently at start of response.
-11. Connect symptoms to possible causes across ALL tabs (sleep, skin, food, meds).
-
-Be the coach that notices things the user wouldn't connect themselves. Reference specific numbers and specific items from their log.`;
+  return "You are "+(profile.name||"the user")+"'s personal health agent. Your name is Salus. You are expert, warm, direct, specific. No disclaimers. No generic advice — always reference their specific numbers and logged items.\n"+
+"USER CONDITIONS: "+(conditions.join(", ")||"none specified")+".\n"+
+"DIETARY RULES: "+(restrictions.join(", ")||"none specified")+".\n"+
+"BIO SEX: "+(profile.bio_sex||"not specified")+" | GENDER: "+(profile.gender_identity||"not specified")+"\n\n"+
+"## CONDITION-SPECIFIC RULES\n"+
+condRules.join("\n")+"\n\n"+
+"## MEDICAL CONTEXT\n"+
+(medical.kidney||"")+(medical.hrt||"")+(medical.nerve||"")+(medical.other||"")+"\n\n"+
+"## TODAY — "+new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})+"\n"+
+"Weight: "+(profile.weight_kg||"?")+"kg | Age: "+(profile.age||"?")+"\n"+
+"Exercise today: "+todayEx+"\n"+
+"Protein target: "+proteinTarget+"g | Calorie target: "+calTarget+"kcal\n"+
+"Water: "+water+" glasses / target "+(profile.targets&&profile.targets.water_glasses||12)+" glasses\n"+
+"Meds taken: "+(takenNames.join(", ")||"none checked")+"\n"+
+"MISSED MEDS: "+(missedMeds.join(", ")||"all taken or as-needed")+"\n"+
+"Synergy gaps: "+(gaps.join(" | ")||"none")+"\n\n"+
+"## SLEEP\n"+sleepNote+"\n"+
+(lastSleep&&lastSleep.hours<6?"Low sleep — suggest energy foods, extra hydration.\n":"")+"\n"+
+"## SKIN NOTES\n"+(skinNotes.length?skinNotes.join(", "):"None recent")+"\n"+
+"Cross-reference skin symptoms with medications, diet changes, sleep, hydration.\n\n"+
+"## UPCOMING PROCEDURES\n"+(upcoming.length?upcoming.join(", "):"None in 7 days")+"\n\n"+
+"## PAST 7 DAYS PROTEIN SOURCES\n"+(past7Protein.length?past7Protein.join(", "):"None logged")+"\n\n"+
+"## TODAY'S FOOD LOG\n"+
+(foodLog.map(function(f){return f.time+" "+f.name+" (Na:"+(f.nutrients&&f.nutrients.sodium||0)+"mg Ca:"+(f.nutrients&&f.nutrients.calcium||0)+"mg kcal:"+(f.nutrients&&f.nutrients.calories||0)+" prot:"+(f.nutrients&&f.nutrients.protein||0)+"g)";}).join(", ")||"Nothing logged yet.")+"\n"+
+"Running totals: Na "+totals.sodium+"mg | Ca "+totals.calcium+"mg | "+totals.calories+"kcal | "+totals.protein+"g protein | Water "+water+" glasses\n\n"+
+"## PANTRY\n"+(pantry.map(function(p){return p.name+(p.qty?" ("+p.qty+")":"");}).join(", ")||"Not logged")+"\n"+
+"Suggest from pantry first. If already eaten today, suggest something different.\n\n"+
+"## YOUR ROLE AS SALUS\n"+
+"You are a continuous agent — you see everything logged today. When user mentions food, flag issues BEFORE they eat. When user mentions a medication, ask if it's daily or one-time. When user uploads a photo, identify the food and give nutritional estimate immediately. Always give a running status at the end: what's good, what's missing, what's next. Be the agent that connects dots the user wouldn't see themselves.";
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -591,7 +545,7 @@ function useVoice(onResult){
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
     const rec=new SpeechRecognition();
-    rec.lang="en-US";rec.continuous=false;rec.interimResults=false;
+    rec.lang=(profile&&profile.language)||"en-US";rec.continuous=false;rec.interimResults=false;
     rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
     rec.onerror=()=>setListening(false);
     rec.onend=()=>setListening(false);
@@ -779,6 +733,7 @@ const STYLE=`
   .typing-dot{display:inline-block;width:5px;height:5px;background:var(--green2);border-radius:50%;animation:bounce 1.2s infinite;margin-right:2px}
   .typing-dot:nth-child(2){animation-delay:.2s}.typing-dot:nth-child(3){animation-delay:.4s}
   @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+  @keyframes micPulse{0%,100%{box-shadow:0 0 0 12px rgba(184,92,56,.2),0 0 0 24px rgba(184,92,56,.08)}50%{box-shadow:0 0 0 16px rgba(184,92,56,.25),0 0 0 32px rgba(184,92,56,.1)}}
   .empty-state{text-align:center;padding:24px;color:var(--ink3);font-size:11px}
   .empty-icon{font-size:26px;margin-bottom:6px}
   select.text-input{appearance:none;cursor:pointer}
@@ -822,51 +777,62 @@ async function parseVoiceCommand(transcript, profile, exLogs){
   }catch(e){return{};}
 }
 
-function VoiceMicButton({onResult}){
-  const[active,setActive]=useState(false);
+function VoiceMicButton({onResult,profile}){
+  const[phase,setPhase]=useState("idle"); // idle | listening | processing
   const[transcript,setTranscript]=useState("");
   const[previews,setPreviews]=useState([]);
   const[staged,setStaged]=useState([]);
   const recRef=useRef(null);
   const accumRef=useRef("");
-  const goRef=useRef(false);
 
-  function startRec(){
+  function startListening(){
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR)return;
+    if(!SR){alert("Voice not supported. Use Safari on iPhone.");return;}
+    accumRef.current="";
+    setTranscript("");
+    setPhase("listening");
     var rec=new SR();
-    rec.lang="en-US";rec.continuous=true;rec.interimResults=false;
+    rec.lang=(profile&&profile.language)||"en-US";
+    rec.continuous=true;
+    rec.interimResults=true;
     rec.onresult=function(e){
-      for(var i=e.resultIndex;i<e.results.length;i++){
-        if(e.results[i].isFinal){
-          accumRef.current+=(accumRef.current?" ":"")+e.results[i][0].transcript;
-        }
+      var final="";var interim="";
+      for(var i=0;i<e.results.length;i++){
+        if(e.results[i].isFinal)final+=e.results[i][0].transcript+" ";
+        else interim+=e.results[i][0].transcript;
       }
-      setTranscript(accumRef.current);
+      accumRef.current=final;
+      setTranscript(final||interim);
     };
-    rec.onerror=function(e){if(e.error!=="no-speech")console.warn("mic:",e.error);};
+    rec.onerror=function(e){
+      if(e.error==="not-allowed"){alert("Microphone access denied. Please allow mic access in Safari settings.");}
+      setPhase("idle");
+    };
     rec.onend=function(){
-      if(goRef.current){
-        try{rec.start();}catch(err){
-          setTimeout(function(){if(goRef.current)startRec();},300);
-        }
+      // Only auto-stop if user hasn't manually stopped
+      if(recRef.current===rec){
+        setPhase("idle");
       }
     };
-    try{rec.start();recRef.current=rec;}catch(e){console.warn(e);}
+    rec.start();
+    recRef.current=rec;
   }
 
-  function toggleMic(){
-    if(active){
-      goRef.current=false;
-      var r=recRef.current;recRef.current=null;
-      if(r)try{r.stop();}catch(e){}
-      setActive(false);
-    } else {
-      accumRef.current=transcript?transcript+" ":"";
-      goRef.current=true;
-      setActive(true);
-      startRec();
-    }
+  function stopAndSend(){
+    var r=recRef.current;
+    recRef.current=null;
+    if(r)try{r.stop();}catch(e){}
+    var text=accumRef.current.trim()||transcript.trim();
+    if(!text&&staged.length===0){setPhase("idle");return;}
+    setPhase("processing");
+    onResult(text,staged.length>0?staged:null);
+    setTimeout(function(){
+      setPhase("idle");
+      setTranscript("");
+      accumRef.current="";
+      setStaged([]);
+      setPreviews([]);
+    },500);
   }
 
   function addPhotos(files){
@@ -881,36 +847,42 @@ function VoiceMicButton({onResult}){
     });
   }
 
-  function send(){
-    var msg=transcript.trim();
-    if(!msg&&staged.length===0)return;
-    onResult(msg,staged.length>0?staged:null);
-    setTranscript("");accumRef.current="";setStaged([]);setPreviews([]);
-    goRef.current=false;
-    var r=recRef.current;recRef.current=null;
-    if(r)try{r.stop();}catch(e){}
-    setActive(false);
-  }
+  var isListening=phase==="listening";
+  var isProcessing=phase==="processing";
 
   return(
     <div style={{width:"100%"}}>
-      {/* Mic row */}
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-        <button onClick={toggleMic}
-          style={{width:56,height:56,borderRadius:"50%",border:"none",cursor:"pointer",flexShrink:0,
-            background:active?"var(--terra)":"var(--green)",color:"white",fontSize:24,
-            boxShadow:active?"0 0 0 8px rgba(184,92,56,.15)":"0 3px 10px rgba(44,74,62,.25)",transition:"all .2s"}}>
-          {active?"🔴":"🎙"}
+      {/* Big mic button */}
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,marginBottom:12}}>
+        <button
+          onClick={isListening?stopAndSend:startListening}
+          disabled={isProcessing}
+          style={{
+            width:80,height:80,borderRadius:"50%",border:"none",cursor:"pointer",
+            background:isListening?"var(--terra)":isProcessing?"var(--ink3)":"var(--green)",
+            color:"white",fontSize:32,
+            boxShadow:isListening?"0 0 0 12px rgba(184,92,56,.2),0 0 0 24px rgba(184,92,56,.08)":"0 4px 16px rgba(44,74,62,.3)",
+            transition:"all .3s",
+            animation:isListening?"micPulse 1.5s ease-in-out infinite":"none"
+          }}>
+          {isProcessing?"⏳":isListening?"⏹":"🎙"}
         </button>
-        <div style={{flex:1}}>
-          <div style={{fontSize:12,fontWeight:500,color:active?"var(--terra)":"var(--green)"}}>
-            {active?"Listening — keep talking…":"Tap mic to start"}
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:13,fontWeight:500,color:isListening?"var(--terra)":isProcessing?"var(--ink3)":"var(--green)"}}>
+            {isProcessing?"Processing…":isListening?"Tap ⏹ when done":"Tap to speak"}
           </div>
-          <div style={{fontSize:10,color:"var(--ink3)",marginTop:2}}>
-            {active?"Tap 🔴 when done — say everything at once":"Food · water · exercise · sleep"}
+          <div style={{fontSize:10,color:"var(--ink3)",marginTop:3}}>
+            {isListening?"Say everything — food, water, exercise, sleep":"Describe your day in one go"}
           </div>
         </div>
       </div>
+
+      {/* Live transcript */}
+      {(transcript||isListening)&&(
+        <div style={{background:isListening?"#f0f7f4":"var(--cream2)",border:"1px solid "+(isListening?"var(--green2)":"var(--border)"),borderRadius:10,padding:"10px 13px",marginBottom:10,minHeight:48,fontSize:12,color:"var(--ink)",lineHeight:1.6,transition:"all .3s"}}>
+          {transcript||<span style={{color:"var(--ink3)",fontStyle:"italic"}}>Listening…</span>}
+        </div>
+      )}
 
       {/* Photo thumbnails */}
       {previews.length>0&&(
@@ -918,53 +890,29 @@ function VoiceMicButton({onResult}){
           {previews.map(function(p,i){return(
             <div key={i} style={{position:"relative"}}>
               <img src={p} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"2px solid var(--green2)"}}/>
-              <button onClick={function(){
-                  setPreviews(function(x){return x.filter(function(_,j){return j!==i;});});
-                  setStaged(function(x){return x.filter(function(_,j){return j!==i;});});
-                }}
-                style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",
-                  background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontSize:9,padding:0}}>×</button>
+              <button onClick={function(){setPreviews(function(x){return x.filter(function(_,j){return j!==i;});});setStaged(function(x){return x.filter(function(_,j){return j!==i;});});}}
+                style={{position:"absolute",top:-4,right:-4,width:18,height:18,borderRadius:"50%",background:"var(--terra)",color:"white",border:"none",cursor:"pointer",fontSize:10,padding:0,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
             </div>
           );})}
           <span style={{fontSize:10,color:"var(--green)"}}>{previews.length} photo{previews.length>1?"s":""}</span>
         </div>
       )}
 
-      {/* Transcript */}
-      <textarea
-        value={transcript}
-        onChange={function(e){setTranscript(e.target.value);accumRef.current=e.target.value;}}
-        style={{width:"100%",minHeight:52,padding:"8px 10px",borderRadius:8,resize:"none",fontFamily:"inherit",
-          border:"1px solid "+(transcript||active?"var(--green2)":"var(--border)"),
-          fontSize:11,lineHeight:1.5,marginBottom:8,
-          background:active?"#f0f7f4":"var(--cream2)"}}
-        placeholder={active?"Your words appear here as you speak…":"Or type your message here…"}
-      />
-
-      {/* Photo + Send buttons */}
-      <div style={{display:"flex",gap:6}}>
-        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,
-          padding:"8px 0",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",
-          background:"var(--cream2)",position:"relative",fontSize:11,color:"var(--ink3)"}}>
+      {/* Photo buttons — always visible */}
+      <div style={{display:"flex",gap:8}}>
+        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",background:"var(--cream2)",fontSize:11,color:"var(--ink3)",position:"relative"}}>
           📷 Take photo
-          <input type="file" accept="image/*" capture="environment"
-            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-            onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
+          <input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
         </label>
-        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,
-          padding:"8px 0",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",
-          background:"var(--cream2)",position:"relative",fontSize:11,color:"var(--ink3)"}}>
-          🖼 Choose photos
-          <input type="file" accept="image/*" multiple
-            style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-            onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
+        <label style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",background:"var(--cream2)",fontSize:11,color:"var(--ink3)",position:"relative"}}>
+          🖼 Choose
+          <input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} onChange={function(e){if(e.target.files.length)addPhotos(e.target.files);e.target.value="";}}/>
         </label>
-        <button onClick={send}
-          disabled={!transcript.trim()&&staged.length===0}
-          className="btn btn-primary"
-          style={{flex:1,fontSize:11}}>
-          ✓ Log it
-        </button>
+        {transcript.trim()&&!isListening&&(
+          <button onClick={stopAndSend} className="btn btn-primary" style={{flex:1,fontSize:11}}>
+            ✓ Log it
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1078,7 +1026,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
                   }
                   var prompt="User sent "+imgs.length+" photo(s) of food or a menu. Analyze what you see and whether it fits a low-sodium, low-oxalate, pescatarian diet.";
                   setVoiceWorking(true);
-                  var reply=await callClaudeWithImages(imgs,prompt,"You are a health coach. Be specific and actionable.");
+                  var reply=await callClaudeWithImages(imgs,prompt,"You are Salus, a personal health AI. Be specific and actionable.");
                   setVoiceResult({actions:[],question:null,photoReply:reply,transcript:"[Photo]"});
                   setVoiceWorking(false);
                 }}/>
@@ -1125,11 +1073,58 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
           </div>
         }
       </div>
-      <div className="day-ribbon">
-        <div><div className="ribbon-label">Calories</div><div className="ribbon-val">{totals.calories}<span style={{fontSize:13,opacity:.7}}> / {calTarget}</span></div></div>
-        <div style={{textAlign:"center"}}><div className="ribbon-label">Sodium</div><div className="ribbon-val">{totals.sodium}<span style={{fontSize:13,opacity:.7}}>mg</span></div></div>
-        <div style={{textAlign:"right"}}><div className="ribbon-label">Protein</div><div className="ribbon-val">{totals.protein}<span style={{fontSize:13,opacity:.7}}>g / {proteinTarget}g</span></div></div>
-      </div>
+      {/* Dynamic nutrient bars — driven by profile.trackedNutrients */}
+      {(function(){
+        var tracked=profile.trackedNutrients&&profile.trackedNutrients.length>0
+          ?profile.trackedNutrients
+          :(profile.conditions&&profile.conditions.length>0
+            ?getNutrientsForConditions(profile.conditions)
+            :null);
+        if(!tracked){return(
+          <div style={{background:"var(--cream2)",border:"1px dashed var(--border)",borderRadius:14,padding:"20px 16px",marginBottom:14,textAlign:"center"}}>
+            <div style={{fontSize:13,color:"var(--green)",marginBottom:6}}>Welcome to NutriCoach</div>
+            <div style={{fontSize:11,color:"var(--ink3)",lineHeight:1.6}}>Go to Profile → Re-do Setup to add your health conditions and set up your daily tracking.</div>
+          </div>
+        );}
+        return(
+          <div style={{background:"var(--green)",borderRadius:14,padding:"14px 16px",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,color:"white",opacity:.9}}>Today</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:".08em"}}>{new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>
+            </div>
+            {tracked.map(function(n){
+              var val=0;
+              if(n.key==="calories")val=totals.calories;
+              else if(n.key==="protein_g")val=totals.protein;
+              else if(n.key==="calcium_mg")val=totals.calcium;
+              else if(n.key==="sodium_mg")val=totals.sodium;
+              else if(n.key==="fiber_g")val=totals.fiber||0;
+              else if(n.key==="carbs_g")val=totals.carbs||0;
+              else if(n.key==="fat_g")val=totals.fat||0;
+              else if(n.key==="potassium_mg")val=totals.potassium||0;
+              else if(n.key==="water_l")val=Math.round((water*(targets.water_glass_oz||8)/33.8)*10)/10;
+              else val=totals[n.key]||0;
+              var tgt=n.target||(profile.targets&&profile.targets[n.key])||null;
+              var pct=tgt?Math.min(100,Math.round((val/tgt)*100)):0;
+              var over=n.isMax&&tgt&&pct>90;
+              return(
+                <div key={n.key} style={{marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:10,color:"rgba(255,255,255,.7)",letterSpacing:".06em",textTransform:"uppercase"}}>{n.label}</span>
+                    {tgt
+                      ?<span style={{fontSize:11,color:"white",fontWeight:500}}>{val}<span style={{fontSize:9,opacity:.7}}> / {tgt}{n.unit==="kcal"?"":(" "+n.unit)}</span></span>
+                      :<span style={{fontSize:9,color:"rgba(255,255,255,.5)",fontStyle:"italic"}}>tap to set target</span>
+                    }
+                  </div>
+                  <div style={{height:6,background:"rgba(255,255,255,.15)",borderRadius:3,overflow:"hidden"}}>
+                    {tgt&&<div style={{height:"100%",width:pct+"%",background:over?"#ff9b9b":n.color,borderRadius:3,transition:"width .5s ease"}}/>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <div className="status-strip">
         {progToday
@@ -1207,21 +1202,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
         );
       })}
 
-      <div className="nutrient-grid" style={{marginTop:16}}>
-        {[
-          {key:"sodium",label:"Sodium",val:totals.sodium,max:targets.sodium_mg,unit:"mg",isMax:true,note:"≤"+targets.sodium_mg+"mg"},
-          {key:"calcium",label:"Calcium",val:totals.calcium,max:targets.calcium_mg,unit:"mg",note:"always with meals"},
-          {key:"magnesium",label:"Magnesium",val:totals.magnesium,max:targets.magnesium_mg,unit:"mg",note:"activates Vit D"},
-          {key:"protein",label:"Protein",val:totals.protein,max:proteinTarget,unit:"g",note:"target: "+proteinTarget+"g today"},
-        ].map(n=>(
-          <div className="nutrient-card" key={n.key}>
-            <div className="nutrient-name">{n.label}</div>
-            <div className="nutrient-value">{n.val} <span>{n.unit}</span></div>
-            <div className="bar-track"><div className={`bar-fill ${barClass(n.val,n.max,n.isMax)}`} style={{width:pct(n.val,n.max)+"%"}}/></div>
-            <div className="nutrient-note">{n.note}</div>
-          </div>
-        ))}
-      </div>
+
 
       <p className="section-title" style={{marginTop:18}}>Today's food</p>
       {foodLog.length===0?(<div className="empty-state"><div className="empty-icon">🥗</div><div>Nothing logged yet</div></div>):(
@@ -2245,7 +2226,7 @@ Only include fields you can extract from the document. Use null for anything not
 
       {medTab==="context"&&(
         <>
-          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Medical information the Coach uses to personalize your advice.</p>
+          <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Medical information Salus uses to personalize your advice.</p>
           {sections.map(s=>(
             <div className="med-card" key={s.key}>
               <div className="med-card-title">
@@ -2414,8 +2395,8 @@ function PantryTab({pantry,setPantry}){
 }
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
-function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections}){
-  const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything — or send me a photo of a menu or plate!"}]);
+function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections,setFoodLog,setWater,setExLogs,setSleepLog,setMaster,setTakenToday}){
+  const[messages,setMessages]=useState([{role:"assistant",content:"Hi! I have your full context — conditions, medications, food log, sleep, exercise and upcoming procedures. Everything is connected. Ask me anything — or send me a photo of a meal, menu, or medication bottle!"}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);
   const[stagedPhotos,setStagedPhotos]=useState([]);
   const[voiceOpen,setVoiceOpen]=useState(false);
@@ -2424,7 +2405,7 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const chatRef=useRef(null);
   const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
-  const QUICK=["What should I order at a restaurant?","Am I getting enough protein today?","Is my Vitamin D working?","What's missing nutritionally?","Suggest something from my pantry","How's my sodium today?","Can I take Actron today?","I have a pimple — could it be my hormones?","How are my kidneys doing nutrition-wise?"];
+  const QUICK=["What should I eat for dinner?","How am I doing on my targets today?","What's missing nutritionally?","Suggest something from my pantry","Did I take all my meds?","How's my water intake?","I just ate — log it","I'm at a restaurant — help me choose"];
 
   async function stagePhotos(files){
     if(!files||!files.length)return;
@@ -2442,15 +2423,39 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
     const newMsgs=[...(messages||[]),userMsg];
     setMessages(newMsgs);setInput("");setLoading(true);
     const systemPrompt=buildCoachPrompt(profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections);
-    let reply;
+    var reply;
     if(stagedPhotos.length){
-      const photoPrompt=text.trim()?text:"Analyze this image based on my full health profile. Be specific and actionable.";
-      reply=await callClaudeWithImages(stagedPhotos,systemPrompt+"\n\n"+photoPrompt,"You are a health coach.");
+      const photoPrompt=text.trim()?text:"Identify this food/document/medication and give me relevant health information based on my full profile. If it's food, estimate nutritional values. If it's a menu, suggest what I should order based on what I've already had today.";
+      reply=await callClaudeWithImages(stagedPhotos,systemPrompt+"\n\n"+photoPrompt,"You are Salus, a personal health AI agent. Be specific, reference the user's actual logged data.");
       setStagedPhotos([]);
     } else {
-      reply=await callClaude(newMsgs.map(m=>({role:m.role,content:m.content})),systemPrompt);
+      reply=await callClaude(newMsgs.map(function(m){return{role:m.role,content:m.content};}),systemPrompt);
     }
-    setMessages([...newMsgs,{role:"assistant",content:reply||"Sorry, I couldn't respond. Try again."}]);
+    var finalReply=reply||"Sorry, I couldn't respond. Try again.";
+    setMessages([...newMsgs,{role:"assistant",content:finalReply}]);
+
+    // Auto-route: if user said they ate/drank something, try to parse and log it
+    if(setFoodLog&&text&&(text.toLowerCase().includes("i ate")||text.toLowerCase().includes("i had")||text.toLowerCase().includes("i'm having")||text.toLowerCase().includes("i just had"))){
+      try{
+        var parsed=await parseVoiceCommand(text,profile,exLogs||[]);
+        if(parsed.foods&&parsed.foods.length&&setFoodLog){
+          var ml={breakfast:"🌅",lunch:"☀️",dinner:"🌙",snack:"🍎"};
+          var newFL=[...(foodLog||[])];
+          for(var i=0;i<parsed.foods.length;i++){
+            var fd=parsed.foods[i];
+            var res=await parseFood(fd.name,pantry||[],newFL);
+            if(res&&res.name&&!res.error){
+              newFL.push({id:Date.now()+Math.random(),name:res.name,meal:fd.meal||"snack",mealLabel:ml[fd.meal]||"🍽",time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),nutrients:{sodium:res.sodium||0,calcium:res.calcium||0,calories:res.calories||0,protein:res.protein||0,potassium:res.potassium||0,magnesium:res.magnesium||0},oxalate:res.oxalate||"low",notes:res.notes||""});
+            }
+          }
+          if(newFL.length!==(foodLog||[]).length){setFoodLog(newFL);store.set("food-log-"+todayKey(),newFL);}
+        }
+        if(parsed.water_glasses&&parsed.water_glasses>0&&setWater){
+          var nw=Math.min(profile.targets&&profile.targets.water_glasses||12,(water||0)+Math.round(parsed.water_glasses));
+          setWater(nw);store.set("water-"+todayKey(),nw);
+        }
+      } catch(e){}
+    }
     setLoading(false);
   }
 
@@ -2458,16 +2463,16 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
 
   return(
     <div className="section">
-      <p className="section-title">Nutrition Coach</p>
+      <p className="section-title">Salus</p>
       <div className="quick-prompts">{QUICK.map((q,i)=><button key={i} className="quick-btn" onClick={()=>send(q)}>{q}</button>)}</div>
       <div className="chat-window" ref={chatRef}>
         {(messages||[]).map((m,i)=>(
           <div key={i} className={`msg msg-${m.role==="user"?"user":"ai"}`}>
-            <div className="msg-label">{m.role==="user"?"You":"Coach"}</div>
+            <div className="msg-label">{m.role==="user"?"You":"Salus"}</div>
             <div className="msg-bubble">{renderText(m.content)}</div>
           </div>
         ))}
-        {loading&&<div className="msg msg-ai"><div className="msg-label">Coach</div><div className="msg-bubble"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div></div>}
+        {loading&&<div className="msg msg-ai"><div className="msg-label">Salus</div><div className="msg-bubble"><span className="typing-dot"/><span className="typing-dot"/><span className="typing-dot"/></div></div>}
       </div>
       {/* Staged photos preview strip */}
       {stagedPhotos.length>0&&(
@@ -2483,7 +2488,7 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
         </div>
       )}
       <div className="chat-input-area">
-        <textarea className="chat-input" placeholder={stagedPhotos.length?"Ask about the photos… (optional)":"Ask your coach… or send photos 📷"} value={input}
+        <textarea className="chat-input" placeholder={stagedPhotos.length?"Ask about the photos… (optional)":"Ask Salus… or send photos 📷"} value={input}
           onChange={e=>setInput(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
@@ -2496,6 +2501,50 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
         </label>
         <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||(!input.trim()&&!stagedPhotos.length)}>{loading?<span className="loading-spin"/>:"Send"}</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SALUS OVERLAY ───────────────────────────────────────────────────────────
+function SalusOverlay(props){
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",flexDirection:"column"}}>
+      {/* Tap backdrop to close */}
+      <div style={{flex:"0 0 12%",background:"rgba(0,0,0,0.45)"}} onClick={props.onClose}/>
+      {/* Slide-up panel */}
+      <div style={{flex:1,background:"var(--cream)",borderRadius:"18px 18px 0 0",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 -8px 40px rgba(0,0,0,0.18)"}}>
+        {/* Handle bar */}
+        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 4px"}}>
+          <div style={{width:36,height:4,background:"var(--border)",borderRadius:2}}/>
+        </div>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 16px 10px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+          <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:300,color:"var(--green)",letterSpacing:".04em"}}>✦ Salus</span>
+          <button onClick={props.onClose} style={{background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:"50%",width:30,height:30,fontSize:16,cursor:"pointer",color:"var(--ink2)",display:"flex",alignItems:"center",justifyContent:"center",padding:0,lineHeight:1}}>✕</button>
+        </div>
+        {/* CoachTab fills the rest */}
+        <div style={{flex:1,overflowY:"auto"}}>
+          <CoachTab
+            profile={props.profile}
+            foodLog={props.foodLog}
+            pantry={props.pantry}
+            water={props.water}
+            master={props.master}
+            takenToday={props.takenToday}
+            exLogs={props.exLogs}
+            medical={props.medical}
+            sleepLog={props.sleepLog}
+            skChecks={props.skChecks}
+            injections={props.injections}
+            setFoodLog={props.setFoodLog}
+            setWater={props.setWater}
+            setExLogs={props.setExLogs}
+            setSleepLog={props.setSleepLog}
+            setMaster={props.setMaster}
+            setTakenToday={props.setTakenToday}
+          />
+        </div>
       </div>
     </div>
   );
@@ -2517,8 +2566,19 @@ function ProfileTab({profile,setProfile,onRedo}){
       <p className="section-title">Profile</p>
 
       {/* Re-do setup button */}
-      <button className="btn btn-outline" style={{width:"100%",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={onRedo}>
+      <button className="btn btn-outline" style={{width:"100%",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={onRedo}>
         <span>↩</span> Re-do Setup
+      </button>
+      <button className="btn btn-outline" style={{width:"100%",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center",gap:8,borderColor:"var(--terra)",color:"var(--terra)"}} onClick={function(){
+        if(window.confirm("This will delete ALL your data and restart the app from scratch. Are you sure?")){
+          try{
+            Object.keys(localStorage).filter(function(k){return k.startsWith("sn_");}).forEach(function(k){localStorage.removeItem(k);});
+            localStorage.clear();
+          }catch(e){}
+          window.location.reload();
+        }
+      }}>
+        <span>🗑</span> Reset all data — start fresh
       </button>
 
       {/* Personal info — weight & height */}
@@ -2601,8 +2661,15 @@ const COMMON_CONDITIONS=[
   "Autoimmune condition","Arthritis","PCOS","Endometriosis","Sleep apnea"
 ];
 const COMMON_DIETS=[
-  "Pescatarian","Vegetarian","Vegan","Gluten-free","Dairy-free",
-  "Low sodium","Low oxalate","Keto","Paleo","Low FODMAP","No restrictions"
+  "Pescatarian","Vegetarian","Vegan",
+  "Gluten-free","Dairy-free","Nut-free","Soy-free","Egg-free",
+  "Low sodium","Low oxalate","Low potassium","Low phosphorus",
+  "Low sugar","No sugar","No added sugar",
+  "Low carb","Moderate carb","No refined grains",
+  "High fiber","Low fat","Low cholesterol",
+  "Keto","Paleo","Low FODMAP","Mediterranean",
+  "Diabetic-friendly","Renal diet","Heart-healthy",
+  "No alcohol","Kosher","Halal","No restrictions"
 ];
 const COMMON_GOALS=[
   "Track daily nutrition","Manage a medical condition","Lose weight","Maintain weight",
@@ -2610,17 +2677,170 @@ const COMMON_GOALS=[
 ];
 const BLOOD_TYPES=["A+","A-","B+","B-","AB+","AB-","O+","O-","Unknown"];
 
+// ─── DOCUMENT UPLOAD STEP ────────────────────────────────────────────────────
+function DocUploadStep({onBack,onNext}){
+  var useState=React.useState;
+  var useRef=React.useRef;
+  var[docs,setDocs]=useState([]);
+  var[analyzing,setAnalyzing]=useState(false);
+  var[status,setStatus]=useState("");
+  var[extracted,setExtracted]=useState(null);
+  var cameraRef=useRef(null);
+  var galleryRef=useRef(null);
+  var pdfRef=useRef(null);
+
+  function fileToBase64(file){
+    return new Promise(function(resolve){
+      var reader=new FileReader();
+      reader.onloadend=function(){
+        var b64=reader.result.split(",")[1];
+        resolve({b64:b64,mediaType:file.type||"image/jpeg",preview:reader.result,name:file.name});
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function pdfToImages(file){
+    var arrayBuffer=await file.arrayBuffer();
+    var uint8=new Uint8Array(arrayBuffer);
+    if(!window.pdfjsLib){return[];}
+    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    var pdf=await pdfjsLib.getDocument({data:uint8}).promise;
+    var images=[];
+    for(var i=1;i<=Math.min(pdf.numPages,6);i++){
+      var page=await pdf.getPage(i);
+      var vp=page.getViewport({scale:1.5});
+      var canvas=document.createElement("canvas");
+      canvas.width=vp.width;canvas.height=vp.height;
+      var ctx=canvas.getContext("2d");
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      var dataUrl=canvas.toDataURL("image/jpeg",0.85);
+      images.push({b64:dataUrl.split(",")[1],mediaType:"image/jpeg",preview:dataUrl,name:file.name+" p."+i});
+    }
+    return images;
+  }
+
+  async function handleFiles(files){
+    if(!files||!files.length)return;
+    setStatus("Processing files…");
+    var newDocs=[];
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      if(f.type==="application/pdf"){
+        var pages=await pdfToImages(f);
+        pages.forEach(function(p){newDocs.push(p);});
+      } else {
+        var img=await fileToBase64(f);
+        newDocs.push(img);
+      }
+    }
+    setDocs(function(prev){return prev.concat(newDocs);});
+    setStatus("");
+  }
+
+  async function analyze(){
+    if(!docs.length)return;
+    setAnalyzing(true);
+    setStatus("Salus is reading your documents…");
+    var prompt="Analyze these health documents and extract ALL relevant information. Return ONLY a JSON object (no other text) with this exact structure:\n{\"conditions\":[],\"medications\":[{\"name\":\"\",\"dose\":\"\",\"frequency\":\"\"}],\"restrictions\":[],\"targets\":{\"sodium_mg\":0,\"calcium_mg\":0,\"protein_g\":0,\"water_L\":0,\"calories\":0,\"fiber_g\":0},\"notes\":\"\"}.\nFor conditions: list all medical diagnoses. For medications: list all drugs/supplements with dose and frequency. For restrictions: dietary rules (e.g. 'low sodium','no sugar','pescatarian'). For targets: any numeric daily targets your doctor specified (use 0 if not mentioned). For notes: any other important health information.";
+    var system="You are a health document analyzer. Extract structured health data from any documents — medical records, prescriptions, lab results, medication labels, handwritten notes. Return ONLY valid JSON, nothing else.";
+    var raw=await callClaudeWithImages(docs,prompt,system);
+    setAnalyzing(false);
+    try{
+      var clean=raw.replace(/```json|```/g,"").trim();
+      var parsed=JSON.parse(clean);
+      setExtracted(parsed);
+      setStatus("Done! Salus found your health data.");
+    } catch(e){
+      setStatus("Could not parse — tap Next to continue manually.");
+      setExtracted(null);
+    }
+  }
+
+  return(
+    <div style={{flex:1,display:"flex",flexDirection:"column"}}>
+      <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Optional Step</div>
+      <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontWeight:300,color:"var(--green)",marginBottom:6}}>Upload health documents</h2>
+      <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Salus will read your documents and set up your profile automatically. Add photos of prescriptions, lab results, medicine bottles, or any health records.</p>
+
+      {/* Upload buttons */}
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <label style={{flex:1,padding:"12px 0",background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",position:"relative"}}>
+          <span style={{fontSize:22}}>📷</span>
+          <span style={{fontSize:9,letterSpacing:".06em",textTransform:"uppercase",color:"var(--ink3)"}}>Camera</span>
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={function(e){handleFiles(e.target.files);e.target.value="";}}/>
+        </label>
+        <label style={{flex:1,padding:"12px 0",background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",position:"relative"}}>
+          <span style={{fontSize:22}}>🖼</span>
+          <span style={{fontSize:9,letterSpacing:".06em",textTransform:"uppercase",color:"var(--ink3)"}}>Library</span>
+          <input ref={galleryRef} type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={function(e){handleFiles(e.target.files);e.target.value="";}}/>
+        </label>
+        <label style={{flex:1,padding:"12px 0",background:"var(--cream2)",border:"1px solid var(--border)",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",position:"relative"}}>
+          <span style={{fontSize:22}}>📄</span>
+          <span style={{fontSize:9,letterSpacing:".06em",textTransform:"uppercase",color:"var(--ink3)"}}>PDF</span>
+          <input ref={pdfRef} type="file" accept="application/pdf,image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={function(e){handleFiles(e.target.files);e.target.value="";}}/>
+        </label>
+      </div>
+
+      {/* Preview strip */}
+      {docs.length>0&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {docs.map(function(d,i){
+            return(
+              <div key={i} style={{position:"relative"}}>
+                <img src={d.preview} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid var(--green2)"}}/>
+                <button onClick={function(){setDocs(function(prev){return prev.filter(function(_,j){return j!==i;});});}} style={{position:"absolute",top:-5,right:-5,background:"var(--terra)",color:"white",border:"none",borderRadius:"50%",width:16,height:16,fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,lineHeight:1}}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Status */}
+      {status!=""&&<p style={{fontSize:11,color:"var(--green)",marginBottom:8}}>{status}</p>}
+
+      {/* Extracted summary */}
+      {extracted&&(
+        <div style={{background:"var(--green3)",border:"1px solid var(--green2)",borderRadius:10,padding:10,marginBottom:10,fontSize:10,color:"var(--ink2)",lineHeight:1.7}}>
+          {extracted.conditions&&extracted.conditions.length>0&&<div><strong>Conditions:</strong> {extracted.conditions.join(", ")}</div>}
+          {extracted.medications&&extracted.medications.length>0&&<div><strong>Meds:</strong> {extracted.medications.map(function(m){return m.name+(m.dose?" "+m.dose:"");}).join(", ")}</div>}
+          {extracted.restrictions&&extracted.restrictions.length>0&&<div><strong>Dietary rules:</strong> {extracted.restrictions.join(", ")}</div>}
+          {extracted.notes&&<div><strong>Notes:</strong> {extracted.notes}</div>}
+        </div>
+      )}
+
+      {/* Analyze button */}
+      {docs.length>0&&!extracted&&(
+        <button className="btn btn-primary" style={{width:"100%",padding:"12px",marginBottom:10}} onClick={analyze} disabled={analyzing}>
+          {analyzing?<span className="loading-spin"/>:"✦ Let Salus read these documents"}
+        </button>
+      )}
+
+      {/* Navigation */}
+      <div style={{display:"flex",gap:7,marginTop:"auto",paddingTop:12}}>
+        <button className="btn btn-outline" style={{flex:1}} onClick={onBack}>Back</button>
+        <button className="btn btn-primary" style={{flex:2}} onClick={function(){onNext(extracted);}}>
+          {docs.length===0?"Skip for now →":"Next →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OnboardingFlow({onComplete,existingProfile}){
   const[step,setStep]=useState(1);
   const TOTAL=9;
   // Step 2
   const[firstName,setFirstName]=useState("");
+  const[voiceLang,setVoiceLang]=useState("en-US");
   const[dob,setDob]=useState("");
   const[weightKg,setWeightKg]=useState("");
   const[heightCm,setHeightCm]=useState("");
   const[bloodType,setBloodType]=useState("");
   const[weightUnit,setWeightUnit]=useState("kg");
   const[heightUnit,setHeightUnit]=useState("cm");
+  const[bioSex,setBioSex]=useState("");
+  const[genderIdentity,setGenderIdentity]=useState("");
   // Step 3
   const[conditions,setConditions]=useState([]);
   const[condInput,setCondInput]=useState("");
@@ -2638,6 +2858,10 @@ function OnboardingFlow({onComplete,existingProfile}){
   const[medInput,setMedInput]=useState("");
   const[medList,setMedList]=useState([]);
   const[skipMeds,setSkipMeds]=useState(false);
+  // Doc upload extracted data
+  const[customTargets,setCustomTargets]=useState({});
+  function setMeds(fn){setMedList(fn);}
+
   // Step 8 — connect apps
   const[customApps,setCustomApps]=useState([]);
   const[customAppInput,setCustomAppInput]=useState("");
@@ -2652,6 +2876,8 @@ function OnboardingFlow({onComplete,existingProfile}){
     if(existingProfile.weight_kg)setWeightKg(String(existingProfile.weight_kg));
     if(existingProfile.height_cm)setHeightCm(String(existingProfile.height_cm));
     if(existingProfile.blood_type)setBloodType(existingProfile.blood_type);
+    if(existingProfile.bio_sex)setBioSex(existingProfile.bio_sex);
+    if(existingProfile.gender_identity)setGenderIdentity(existingProfile.gender_identity);
     if(existingProfile.conditions)setConditions(existingProfile.conditions);
     if(existingProfile.restrictions)setDiets(existingProfile.restrictions);
     if(existingProfile.goals)setGoals(existingProfile.goals||[]);
@@ -2668,15 +2894,20 @@ function OnboardingFlow({onComplete,existingProfile}){
     let calcAge=0;
     if(dob){const b=new Date(dob);const today=new Date();calcAge=today.getFullYear()-b.getFullYear()-((today.getMonth()<b.getMonth()||(today.getMonth()===b.getMonth()&&today.getDate()<b.getDate()))?1:0);}
     // Preserve existing targets if re-doing setup
-    const existingTargets=existingProfile?.targets||{water_glasses:12,water_glass_oz:8,sodium_mg:1500,calcium_mg:1300,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320};
+    const existingTargets=existingProfile?.targets||{water_glasses:8,water_glass_oz:8,sodium_mg:2300,calcium_mg:1000,calories:2000,protein_g:65,potassium_mg:3500,magnesium_mg:320};
     const profile={
-      name:firstName,dob,age:calcAge,
-      weight_kg:wKg||44,height_cm:hCm||160,
+      name:firstName,dob,age:calcAge,language:voiceLang,
+      weight_kg:wKg||null,height_cm:hCm||null,
       blood_type:bloodType,
+      bio_sex:bioSex,
+      gender_identity:genderIdentity,
       targets:existingTargets,
       conditions,restrictions:diets,goals,
       notes:existingProfile?.notes||"",onboarded:true
     };
+    // Auto-set tracked nutrients from conditions
+    var trackedNutrients=getNutrientsForConditions(conditions);
+    profile.trackedNutrients=trackedNutrients;
     store.set("profile",profile);
     store.set("onboarded","true");
     onComplete(profile);
@@ -2703,15 +2934,46 @@ function OnboardingFlow({onComplete,existingProfile}){
             <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:36,fontWeight:300,color:"var(--green)",marginBottom:8}}>NutriCoach</h1>
             <p style={{fontSize:13,color:"var(--ink3)",lineHeight:1.7,marginBottom:12}}>Your personal AI nutrition companion — tailored to your health conditions, tracking what matters, coaching you in real time.</p>
             <p style={{fontSize:11,color:"var(--ink3)",lineHeight:1.6,marginBottom:32,maxWidth:300}}>Works for kidney stones, diabetes, heart disease, HRT, and any condition where diet matters.</p>
-            <button className="btn btn-primary" style={{width:"100%",padding:"14px",fontSize:12,marginBottom:12}} onClick={()=>setStep(2)}>Get started →</button>
-            <button className="btn btn-outline" style={{width:"100%",padding:"14px",fontSize:12}} onClick={()=>setStep(9)}>I already have an account</button>
+            <button className="btn btn-primary" style={{width:"100%",padding:"14px",fontSize:12,marginBottom:12}} onClick={()=>setStep(10)}>Get started →</button>
+            <button className="btn btn-outline" style={{width:"100%",padding:"14px",fontSize:12}} onClick={()=>setStep(10)}>I already have an account</button>
           </div>
         )}
 
-        {/* ── SCREEN 2: About you ── */}
+        {/* ── SCREEN 2: Connect health apps ── */}
         {step===2&&(
+          <div style={{flex:1,display:"flex",flexDirection:"column"}}>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 1 of 9</div>
+            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:8}}>Connect your apps</h2>
+            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:18,lineHeight:1.6}}>Import your health data automatically — or skip and enter manually. You can always connect later.</p>
+            {[
+              {name:"Apple Health",icon:"🍎",desc:"Weight, steps, sleep, vitals, nutrition"},
+              {name:"Fitbit",icon:"⌚",desc:"Activity, sleep, heart rate"},
+              {name:"Garmin",icon:"🏃",desc:"Workouts, sleep, body metrics"},
+              {name:"Oura Ring",icon:"💍",desc:"Sleep stages, readiness, HRV"},
+              {name:"MyFitnessPal",icon:"🥗",desc:"Food history, nutrition data"},
+              {name:"Withings",icon:"⚖️",desc:"Weight, blood pressure"},
+            ].map(function(app){return(
+              <div key={app.name} onClick={function(){alert(app.name+" — coming soon!");}}
+                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",background:"white",border:"1px solid var(--border)",borderRadius:10,marginBottom:7,cursor:"pointer"}}>
+                <span style={{fontSize:22}}>{app.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{app.name}</div>
+                  <div style={{fontSize:10,color:"var(--ink3)"}}>{app.desc}</div>
+                </div>
+                <span style={{fontSize:9,color:"var(--ink3)",border:"1px solid var(--border)",borderRadius:20,padding:"3px 9px"}}>Soon</span>
+              </div>
+            );})}
+            <div style={{marginTop:16}}>
+              <button className="btn btn-primary" style={{width:"100%",padding:"13px",marginBottom:8}} onClick={()=>setStep(3)}>Skip — enter manually →</button>
+              <div style={{textAlign:"center",fontSize:10,color:"var(--ink3)"}}>Connect apps anytime from Profile</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── SCREEN 3: About you ── */}
+        {step===3&&(
           <div style={{flex:1}}>
-            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 1 of 8</div>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 2 of 9</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>About you</h2>
             <p style={{fontSize:11,color:"var(--ink3)",marginBottom:20,lineHeight:1.6}}>This helps personalize your nutrition targets and calorie calculations.</p>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2720,11 +2982,60 @@ function OnboardingFlow({onComplete,existingProfile}){
                 <input className="text-input" style={{width:"100%"}} placeholder="Your name" value={firstName} onChange={e=>setFirstName(e.target.value)}/>
               </div>
               <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Language for voice input</div>
+                <select className="text-input" style={{width:"100%"}} value={voiceLang} onChange={e=>setVoiceLang(e.target.value)}>
+                  <option value="en-US">English</option>
+                  <option value="es-ES">Español</option>
+                  <option value="fr-FR">Français</option>
+                  <option value="pt-BR">Português</option>
+                  <option value="de-DE">Deutsch</option>
+                  <option value="it-IT">Italiano</option>
+                </select>
+              </div>
+              <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Date of birth *</div>
-                <input className="text-input" style={{width:"100%"}} type="date" value={dob} onChange={e=>setDob(e.target.value)}/>
-                {dob&&<div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>
-                  Age: {(()=>{const b=new Date(dob);const t=new Date();return t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);})()}
-                </div>}
+                <div style={{display:"flex",gap:6}}>
+                  <select className="text-input" style={{flex:2}}
+                    value={dob?parseInt(dob.split("-")[1]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      var m=String(e.target.value).padStart(2,"0");
+                      setDob((p[0]||new Date().getFullYear())+"-"+m+"-"+(p[2]||"01"));
+                    }}>
+                    <option value="">Month</option>
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map(function(mn,i){
+                      return <option key={i+1} value={i+1}>{mn}</option>;
+                    })}
+                  </select>
+                  <select className="text-input" style={{flex:1}}
+                    value={dob?parseInt(dob.split("-")[2]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      var d=String(e.target.value).padStart(2,"0");
+                      setDob((p[0]||new Date().getFullYear())+"-"+(p[1]||"01")+"-"+d);
+                    }}>
+                    <option value="">Day</option>
+                    {Array.from({length:31},function(_,i){return i+1;}).map(function(d){
+                      return <option key={d} value={d}>{d}</option>;
+                    })}
+                  </select>
+                  <select className="text-input" style={{flex:2}}
+                    value={dob?parseInt(dob.split("-")[0]):""}
+                    onChange={function(e){
+                      var p=dob?dob.split("-"):["","",""];
+                      setDob(e.target.value+"-"+(p[1]||"01")+"-"+(p[2]||"01"));
+                    }}>
+                    <option value="">Year</option>
+                    {Array.from({length:100},function(_,i){return new Date().getFullYear()-i;}).map(function(y){
+                      return <option key={y} value={y}>{y}</option>;
+                    })}
+                  </select>
+                </div>
+                {dob&&dob.split("-")[0]&&dob.split("-")[1]&&dob.split("-")[2]&&(function(){
+                  var b=new Date(dob);var t=new Date();
+                  var age=t.getFullYear()-b.getFullYear()-((t.getMonth()<b.getMonth()||(t.getMonth()===b.getMonth()&&t.getDate()<b.getDate()))?1:0);
+                  return <div style={{fontSize:9,color:"var(--ink3)",marginTop:3}}>Age: {age}</div>;
+                })()}
               </div>
               <div>
                 <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Weight</div>
@@ -2757,16 +3068,46 @@ function OnboardingFlow({onComplete,existingProfile}){
                   ))}
                 </div>
               </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Biological sex <span style={{color:"var(--ink3)",fontWeight:300}}>(used for medical reference ranges)</span></div>
+                <div style={{display:"flex",gap:7}}>
+                  {["Female","Male","Intersex"].map(function(s){
+                    return(
+                      <button key={s} onClick={function(){setBioSex(s);}}
+                        style={{flex:1,padding:"8px 0",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"monospace",
+                          background:bioSex===s?"var(--green)":"white",color:bioSex===s?"white":"var(--ink2)",
+                          borderColor:bioSex===s?"var(--green)":"var(--border)"}}>
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Gender identity <span style={{color:"var(--ink3)",fontWeight:300}}>(optional — how Salus addresses you)</span></div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {["Woman","Man","Non-binary","Prefer not to say"].map(function(g){
+                    return(
+                      <button key={g} onClick={function(){setGenderIdentity(g);}}
+                        style={{padding:"6px 12px",fontSize:10,border:"1px solid",borderRadius:20,cursor:"pointer",fontFamily:"monospace",
+                          background:genderIdentity===g?"var(--terra)":"white",color:genderIdentity===g?"white":"var(--ink2)",
+                          borderColor:genderIdentity===g?"var(--terra)":"var(--border)"}}>
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div style={{display:"flex",gap:7,marginTop:24}}>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(1)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(3)} disabled={!firstName.trim()}>Next →</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(4)} disabled={!firstName.trim()}>Next →</button>
             </div>
           </div>
         )}
 
         {/* ── SCREEN 3: Health conditions ── */}
-        {step===3&&(
+        {step===4&&(
           <div style={{flex:1}}>
             <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 2 of 8</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Health conditions</h2>
@@ -2789,14 +3130,50 @@ function OnboardingFlow({onComplete,existingProfile}){
               <div key={i} className="condition-tag" style={{marginBottom:4}}>{c}<button className="remove-tag" onClick={()=>setConditions(conditions.filter(x=>x!==c))}>×</button></div>
             ))}
             <div style={{display:"flex",gap:7,marginTop:20}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(2)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(4)}>Next →</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(3)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(12)}>Next →</button>
             </div>
           </div>
         )}
 
+        {/* ── SCREEN: Upload Health Documents (step 12) ── */}
+        {step===12&&(
+          <DocUploadStep
+            onBack={()=>setStep(4)}
+            onNext={function(extractedData){
+              if(extractedData){
+                if(extractedData.conditions&&extractedData.conditions.length){
+                  setConditions(function(prev){
+                    var merged=prev.slice();
+                    extractedData.conditions.forEach(function(c){if(!merged.includes(c))merged.push(c);});
+                    return merged;
+                  });
+                }
+                if(extractedData.restrictions&&extractedData.restrictions.length){
+                  setDiets(function(prev){
+                    var merged=prev.slice();
+                    extractedData.restrictions.forEach(function(r){if(!merged.includes(r))merged.push(r);});
+                    return merged;
+                  });
+                }
+                if(extractedData.medications&&extractedData.medications.length){
+                  setMeds(function(prev){
+                    var merged=prev.slice();
+                    extractedData.medications.forEach(function(m){merged.push(m);});
+                    return merged;
+                  });
+                }
+                if(extractedData.targets){
+                  setCustomTargets(extractedData.targets);
+                }
+              }
+              setStep(5);
+            }}
+          />
+        )}
+
         {/* ── SCREEN 4: Diet ── */}
-        {step===4&&(
+        {step===5&&(
           <div style={{flex:1}}>
             <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 3 of 8</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Dietary restrictions</h2>
@@ -2816,14 +3193,14 @@ function OnboardingFlow({onComplete,existingProfile}){
               <button className="btn btn-outline btn-sm" onClick={()=>{if(dietInput.trim()){setDiets(p=>[...p,dietInput.trim()]);setDietInput("");}}}>Add</button>
             </div>
             <div style={{display:"flex",gap:7,marginTop:20}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(3)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(5)}>Next →</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(12)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(6)}>Next →</button>
             </div>
           </div>
         )}
 
         {/* ── SCREEN 5: Goals ── */}
-        {step===5&&(
+        {step===6&&(
           <div style={{flex:1}}>
             <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 4 of 8</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Your goals</h2>
@@ -2843,36 +3220,14 @@ function OnboardingFlow({onComplete,existingProfile}){
               ))}
             </div>
             <div style={{display:"flex",gap:7,marginTop:20}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(4)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(6)}>Next →</button>
-            </div>
-          </div>
-        )}
-
-        {/* ── SCREEN 6: Skincare — just point to Skin tab ── */}
-        {step===6&&(
-          <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center"}}>
-            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 5 of 8</div>
-            <div style={{fontSize:44,marginBottom:16}}>✨</div>
-            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:10}}>Skincare routine</h2>
-            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:10,lineHeight:1.7,maxWidth:320}}>
-              Your skincare routine can include a different schedule for each day of the week — Monday retinol, Tuesday rest, Thursday lactic acid, and so on.
-            </p>
-            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:24,lineHeight:1.7,maxWidth:320}}>
-              The best way to set it up is by <strong style={{color:"var(--green)"}}>talking to the AI Coach</strong> inside the Skin tab — just describe your routine out loud and it builds the calendar for you.
-            </p>
-            <div style={{background:"var(--green3)",border:"1px solid var(--green2)",borderRadius:10,padding:"12px 16px",marginBottom:28,fontSize:11,color:"var(--green)",lineHeight:1.6,maxWidth:320}}>
-              After setup, go to <strong>Skin → Routine</strong> and tap <strong>"Build my routine"</strong> to get started.
-            </div>
-            <div style={{display:"flex",gap:7,width:"100%"}}>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(5)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(7)}>Got it →</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(8)}>Next →</button>
             </div>
           </div>
         )}
 
         {/* ── SCREEN 7: Medications (optional) ── */}
-        {step===7&&(
+        {step===8&&(
           <div style={{flex:1}}>
             <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 6 of 8</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Medications & supplements</h2>
@@ -2885,70 +3240,17 @@ function OnboardingFlow({onComplete,existingProfile}){
               <div key={i} className="condition-tag" style={{marginBottom:5}}>{m}<button className="remove-tag" onClick={()=>setMedList(medList.filter((_,j)=>j!==i))}>×</button></div>
             ))}
             <div style={{display:"flex",gap:7,marginTop:20}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(6)}>Back</button>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(8)}>Skip</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(8)}>Next →</button>
-            </div>
-          </div>
-        )}
-
-        {/* ── SCREEN 8: Connect apps ── */}
-        {step===8&&(
-          <div style={{flex:1}}>
-            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 7 of 8</div>
-            <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Connect health apps</h2>
-            <p style={{fontSize:11,color:"var(--ink3)",marginBottom:14,lineHeight:1.6}}>Sync your data from other health apps. Integrations are coming soon — tap to register your interest so we know which ones to prioritize.</p>
-            {[
-              {name:"Apple Health",icon:"🍎",desc:"Weight, steps, sleep, vitals"},
-              {name:"Fitbit",icon:"⌚",desc:"Activity, sleep, heart rate"},
-              {name:"Garmin",icon:"🏃",desc:"Workouts, sleep, body metrics"},
-              {name:"Oura Ring",icon:"💍",desc:"Sleep stages, readiness, HRV"},
-              {name:"MyFitnessPal",icon:"🥗",desc:"Food history, nutrition data"},
-              {name:"Withings",icon:"⚖️",desc:"Weight scale, blood pressure"},
-              {name:"Samsung Health",icon:"📱",desc:"Activity, sleep, nutrition"},
-              {name:"Cronometer",icon:"🔬",desc:"Detailed nutrition tracking"},
-            ].map(app=>(
-              <div key={app.name} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",background:"white",border:"1px solid var(--border)",borderRadius:10,marginBottom:7}}>
-                <span style={{fontSize:20}}>{app.icon}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,color:"var(--ink)",fontWeight:500}}>{app.name}</div>
-                  <div style={{fontSize:10,color:"var(--ink3)"}}>{app.desc}</div>
-                </div>
-                <button className="btn btn-outline btn-sm" style={{opacity:.6}}
-                  onClick={()=>alert(app.name+" integration coming soon!")}>
-                  Soon
-                </button>
-              </div>
-            ))}
-            {/* Custom app input */}
-            <div style={{marginTop:10}}>
-              <div style={{fontSize:9,letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:6}}>Don't see your app? Add it:</div>
-              <div style={{display:"flex",gap:7,marginBottom:6}}>
-                <input className="text-input" style={{flex:1}} placeholder="e.g. Polar, Whoop, Strava…"
-                  value={customAppInput} onChange={e=>setCustomAppInput(e.target.value)}
-                  onKeyDown={e=>{if(e.key==="Enter"&&customAppInput.trim()){setCustomApps(p=>[...p,customAppInput.trim()]);setCustomAppInput("");}}}/>
-                <button className="btn btn-outline btn-sm" onClick={()=>{
-                  if(customAppInput.trim()){setCustomApps(p=>[...p,customAppInput.trim()]);setCustomAppInput("");}
-                }}>Add</button>
-              </div>
-              {customApps.map((a,i)=>(
-                <div key={i} className="condition-tag" style={{marginBottom:4}}>
-                  📲 {a}
-                  <button className="remove-tag" onClick={()=>setCustomApps(customApps.filter((_,j)=>j!==i))}>×</button>
-                </div>
-              ))}
-            </div>
-            <div style={{display:"flex",gap:7,marginTop:16}}>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(7)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={()=>setStep(9)}>Next →</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>finish()}>Skip</button>
+              <button className="btn btn-primary" style={{flex:2}} onClick={()=>finish()}>Next →</button>
             </div>
           </div>
         )}
 
         {/* ── SCREEN 9: Terms & Conditions ── */}
-        {step===9&&(
+        {step===10&&(
           <div style={{flex:1,display:"flex",flexDirection:"column"}}>
-            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Step 8 of 8</div>
+            <div style={{fontSize:9,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink3)",marginBottom:4}}>Before you begin</div>
             <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:300,color:"var(--green)",marginBottom:6}}>Terms & Privacy</h2>
             <p style={{fontSize:11,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>Please read and accept before using the app.</p>
             <div style={{flex:1,background:"white",border:"1px solid var(--border)",borderRadius:10,padding:14,overflowY:"auto",fontSize:10,color:"var(--ink2)",lineHeight:1.8,marginBottom:14,maxHeight:320}}>
@@ -2982,13 +3284,22 @@ function OnboardingFlow({onComplete,existingProfile}){
               <span style={{fontSize:11,color:"var(--ink)",lineHeight:1.5}}>I have read and agree to the Terms of Service and Privacy Policy</span>
             </div>
             <div style={{display:"flex",gap:7}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(8)}>Back</button>
-              <button className="btn btn-primary" style={{flex:2,opacity:tcAccepted?1:.4}} onClick={()=>{if(tcAccepted)finish();}} disabled={!tcAccepted}>
-                Start using the app →
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(9)}>Back</button>
+              <button className="btn btn-primary" style={{flex:2,opacity:tcAccepted?1:.4}} onClick={()=>{if(tcAccepted)setStep(2);}} disabled={!tcAccepted}>
+                Agree & Continue →
               </button>
             </div>
           </div>
         )}
+
+      {step>=3&&(
+        <button onClick={function(){alert("Finish setup — then Salus ✦ is everywhere!");}}
+          style={{position:"fixed",bottom:24,right:20,width:56,height:56,borderRadius:"50%",
+            background:"var(--green)",color:"white",border:"none",cursor:"pointer",fontSize:22,
+            boxShadow:"0 4px 20px rgba(44,74,62,.35)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+          ✦
+        </button>
+      )}
       </div>
     </div>
   );
@@ -3390,17 +3701,90 @@ function HistoryTab({sleepLog}){
 
 // ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
 const DEFAULT_PROFILE={
-  name:"Sofia",
-  // FIX #10: protein_g 65 not 55
-  weight_kg:44,height_cm:160,targets:{water_glasses:12,water_glass_oz:8,sodium_mg:1500,calcium_mg:1000,calories:1800,protein_g:65,potassium_mg:3500,magnesium_mg:320},
-  conditions:["Kidney stones (bilateral, multiple small)","HRT (started December)","Subscapular nerve — recovering"],
-  restrictions:["High-oxalate foods without calcium pairing","Sodium > 1500mg/day","High animal protein in one sitting","NSAIDs/Ibuprofen unless necessary","Pescatarian"],
-  notes:"Calcium always with meals. Lemon water daily. Animal protein spread across meals. Actron/Ibuprofen stresses kidneys — flag always. PESCATARIAN — no meat.",
+  name:"",
+  weight_kg:null,height_cm:null,
+  dob:"",age:null,blood_type:"",bio_sex:"",gender_identity:"",
+  targets:{water_glasses:8,water_glass_oz:8,sodium_mg:2300,calcium_mg:1000,calories:2000,protein_g:65,potassium_mg:3500,magnesium_mg:320},
+  conditions:[],restrictions:[],goals:[],
+  notes:"",trackedNutrients:[],onboarded:false,language:"en-US"
+};
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
+// ─── CONDITION → NUTRIENT TARGETS MAPPING ────────────────────────────────────
+const CONDITION_NUTRIENTS = {
+  "Kidney stones": [
+    {key:"calcium_mg",  label:"Calcium",   unit:"mg",  target:null, isMax:false, color:"#ffd97d", why:"Binds oxalate in gut"},
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#ff9b9b", why:"High sodium increases urinary calcium"},
+    {key:"protein_g",   label:"Protein",   unit:"g",   target:null,   isMax:false, color:"#a8d8ea", why:"Moderate protein prevents stones"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Maintain healthy weight"},
+    {key:"water_l",     label:"Water",     unit:"L",   target:null,  isMax:false, color:"#90caf9", why:"Dilutes urine to prevent crystals"},
+  ],
+  "Diabetes type 1": [
+    {key:"carbs_g",     label:"Carbs",     unit:"g",   target:null,  isMax:true,  color:"#ff9b9b", why:"Blood sugar control"},
+    {key:"sugar_g",     label:"Sugar",     unit:"g",   target:null,   isMax:true,  color:"#ffb74d", why:"Limit added sugars"},
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Slows glucose absorption"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Weight management"},
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#f4a87c", why:"Heart health"},
+  ],
+  "Diabetes type 2": [
+    {key:"carbs_g",     label:"Carbs",     unit:"g",   target:null,  isMax:true,  color:"#ff9b9b", why:"Blood sugar control"},
+    {key:"sugar_g",     label:"Sugar",     unit:"g",   target:null,   isMax:true,  color:"#ffb74d", why:"Limit added sugars"},
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Slows glucose absorption"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Weight management"},
+    {key:"protein_g",   label:"Protein",   unit:"g",   target:null,   isMax:false, color:"#a8d8ea", why:"Maintain muscle mass"},
+  ],
+  "Hypertension": [
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#ff9b9b", why:"Directly raises blood pressure"},
+    {key:"potassium_mg",label:"Potassium", unit:"mg",  target:null, isMax:false, color:"#ce93d8", why:"Counteracts sodium"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Weight management"},
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Heart health"},
+  ],
+  "Osteoporosis": [
+    {key:"calcium_mg",  label:"Calcium",   unit:"mg",  target:null, isMax:false, color:"#ffd97d", why:"Bone density"},
+    {key:"vitamin_d_iu",label:"Vitamin D", unit:"IU",  target:null,  isMax:false, color:"#fff176", why:"Calcium absorption"},
+    {key:"protein_g",   label:"Protein",   unit:"g",   target:null,   isMax:false, color:"#a8d8ea", why:"Bone matrix"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Maintain weight"},
+  ],
+  "High cholesterol": [
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Lowers LDL cholesterol"},
+    {key:"fat_g",       label:"Sat. Fat",  unit:"g",   target:null,   isMax:true,  color:"#ff9b9b", why:"Raises LDL"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Weight management"},
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#f4a87c", why:"Heart health"},
+  ],
+  "Heart disease": [
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#ff9b9b", why:"Reduces fluid retention"},
+    {key:"fat_g",       label:"Sat. Fat",  unit:"g",   target:null,   isMax:true,  color:"#ffb74d", why:"Arterial health"},
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Heart protection"},
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Weight management"},
+  ],
+  "default": [
+    {key:"calories",    label:"Calories",  unit:"kcal",target:null, isMax:false, color:"#7ecfb0", why:"Daily energy"},
+    {key:"protein_g",   label:"Protein",   unit:"g",   target:null,   isMax:false, color:"#a8d8ea", why:"Muscle maintenance"},
+    {key:"fiber_g",     label:"Fiber",     unit:"g",   target:null,   isMax:false, color:"#a5d6a7", why:"Digestive health"},
+    {key:"sodium_mg",   label:"Sodium",    unit:"mg",  target:null, isMax:true,  color:"#f4a87c", why:"Heart health"},
+    {key:"water_l",     label:"Water",     unit:"L",   target:null,  isMax:false, color:"#90caf9", why:"Hydration"},
+  ]
 };
 
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
+function getNutrientsForConditions(conditions){
+  var seen={};var result=[];
+  conditions.forEach(function(c){
+    var list=CONDITION_NUTRIENTS[c]||[];
+    list.forEach(function(n){
+      if(!seen[n.key]){seen[n.key]=true;result.push({...n});}
+    });
+  });
+  if(result.length===0)return CONDITION_NUTRIENTS["default"];
+  // Always include water if not already there
+  if(!seen["water_l"]&&!seen["water_glasses"]){
+    result.push({key:"water_l",label:"Water",unit:"L",target:2.0,isMax:false,color:"#90caf9",why:"Essential hydration"});
+  }
+  return result;
+}
+
+
 function App(){
   const[tab,setTab]=useState("today");
+  const[salusOpen,setSalusOpen]=useState(false);
   const[foodLog,setFoodLog]=useState([]);
   const[water,setWater]=useState(0);
   const[pantry,setPantry]=useState([]);
@@ -3421,6 +3805,15 @@ function App(){
     async function load(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
+        // Auto-clear if app version changed OR no version stored (old data)
+        const APP_VERSION="1.70";
+        const storedVersion=localStorage.getItem("sn_app_version");
+        if(!storedVersion||storedVersion!==APP_VERSION){
+          // Clear ALL old data on version change
+          Object.keys(localStorage).forEach(k=>localStorage.removeItem(k));
+          localStorage.setItem("sn_app_version",APP_VERSION);
+        }
+
         const ob=await store.get("onboarded");if(ob)setOnboarded(true);
         const p=await store.get("profile");if(p)setProfile(p);
         const pan=await store.get("pantry");if(pan)setPantry(pan);
@@ -3464,7 +3857,25 @@ function App(){
   }
 
   if(!loaded)return null;
-  if(!onboarded)return <OnboardingFlow onComplete={(p)=>{setProfile(p);setOnboarded(true);}} existingProfile={profile}/>;
+  if(!onboarded)return(
+    <div style={{position:"relative"}}>
+      <OnboardingFlow onComplete={function(p){setProfile(p);setOnboarded(true);}} existingProfile={profile}/>
+      <button onClick={function(){setSalusOpen(true);}}
+        style={{position:"fixed",bottom:24,right:20,width:52,height:52,borderRadius:"50%",
+          background:"var(--green)",color:"white",border:"none",cursor:"pointer",
+          fontSize:20,boxShadow:"0 4px 20px rgba(44,74,62,.35)",
+          display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}
+        title="Ask Salus">✦</button>
+      {salusOpen&&<SalusOverlay
+        onClose={function(){setSalusOpen(false);}}
+        profile={profile} foodLog={[]} pantry={[]} water={0}
+        master={master} takenToday={{}} exLogs={[]} medical={DEFAULT_MEDICAL}
+        sleepLog={[]} skChecks={{}} injections={[]}
+        setFoodLog={null} setWater={null} setExLogs={null}
+        setSleepLog={null} setMaster={null} setTakenToday={null}
+      />}
+    </div>
+  );
 
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   // FIX #5: Shortened tab labels to prevent overlap
@@ -3479,7 +3890,7 @@ function App(){
     {id:"injections",label:"Proced."},
     {id:"medical",label:"Medical"},
     {id:"pantry",label:"Pantry"},
-    {id:"coach",label:"Coach ✦"},
+    {id:"salus",label:"Salus ✦"},
     {id:"profile",label:"Profile"},
   ];
 
@@ -3488,7 +3899,7 @@ function App(){
       <style>{STYLE}</style>
       <div className="app">
         <div className="header">
-          <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>Personal Nutrition</div><div className="header-title">Sofia</div></div>
+          <div><div style={{fontSize:9,color:"var(--ink3)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3}}>{profile.name?"Your Nutrition":"NutriCoach"}</div><div className="header-title">{profile.name||"NutriCoach"}</div></div>
           <div style={{textAlign:"right"}}><div className="header-date">{today}</div><div style={{fontSize:8,color:"var(--ink3)",letterSpacing:".08em",marginTop:2}}>v1.13</div></div>
         </div>
         <nav className="nav">{TABS.map(t=><button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}</nav>
@@ -3502,8 +3913,49 @@ function App(){
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical} medDocs={medDocs} setMedDocs={setMedDocs} profile={profile} setProfile={setProfile}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
-        {tab==="coach"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical} sleepLog={sleepLog} skChecks={skChecks} injections={injections}/>}
+        {tab==="salus"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical} sleepLog={sleepLog} skChecks={skChecks} injections={injections} setFoodLog={setFoodLog} setWater={setWater} setExLogs={setExLogs} setSleepLog={setSleepLog} setMaster={setMaster} setTakenToday={setTakenToday}/>}
         {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} onRedo={()=>{store.set("onboarded",null);setOnboarded(false);}}/>}
+
+        {/* Floating Salus button — visible on every tab except salus itself */}
+        {tab!=="salus"&&(
+          <button
+            onClick={()=>setSalusOpen(true)}
+            style={{
+              position:"fixed",bottom:24,right:20,
+              width:56,height:56,borderRadius:"50%",
+              background:"var(--green)",color:"white",
+              border:"none",cursor:"pointer",
+              fontSize:22,
+              boxShadow:"0 4px 20px rgba(44,74,62,.35)",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              zIndex:200,
+              transition:"transform .2s"
+            }}
+            title="Talk to Salus"
+          >
+            ✦
+          </button>
+        )}
+      {salusOpen&&<SalusOverlay
+          onClose={()=>setSalusOpen(false)}
+          profile={profile}
+          foodLog={foodLog}
+          pantry={pantry}
+          water={water}
+          master={master}
+          takenToday={takenToday}
+          exLogs={exLogs}
+          medical={medical}
+          sleepLog={sleepLog}
+          skChecks={skChecks}
+          injections={injections}
+          setFoodLog={setFoodLog}
+          setWater={setWater}
+          setExLogs={setExLogs}
+          setSleepLog={setSleepLog}
+          setMaster={setMaster}
+          setTakenToday={setTakenToday}
+        />}
       </div>
     </>
   );
