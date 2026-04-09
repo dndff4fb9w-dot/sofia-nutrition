@@ -538,20 +538,21 @@ function compressImage(file, maxWidth=800, quality=0.75) {
   });
 }
 
-function useVoice(onResult){
-  const [listening,setListening]=useState(false);
+function useVoice(onResult,lang){
+  var useState=React.useState;var useRef=React.useRef;
+  const[listening,setListening]=useState(false);
   const recRef=useRef(null);
   function startListening(){
-    const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SpeechRecognition){alert("Voice input not supported on this browser. Use Safari on iPhone.");return;}
-    const rec=new SpeechRecognition();
-    rec.lang=(profile&&profile.language)||"en-US";rec.continuous=false;rec.interimResults=false;
-    rec.onresult=e=>{const t=e.results[0][0].transcript;onResult(t);setListening(false);};
-    rec.onerror=()=>setListening(false);
-    rec.onend=()=>setListening(false);
-    rec.start();recRef.current=rec;setListening(true);
+    var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SpeechRecognition){alert("Voice input not supported. Use Safari on iPhone.");return;}
+    var rec=new SpeechRecognition();
+    rec.lang=lang||"en-US";rec.continuous=false;rec.interimResults=false;
+    rec.onresult=function(e){var t=e.results[0][0].transcript;onResult(t);setListening(false);};
+    rec.onerror=function(){setListening(false);};
+    rec.onend=function(){setListening(false);};
+    try{rec.start();recRef.current=rec;setListening(true);}catch(e){setListening(false);}
   }
-  function stopListening(){recRef.current?.stop();setListening(false);}
+  function stopListening(){if(recRef.current){recRef.current.stop();}setListening(false);}
   return{listening,startListening,stopListening};
 }
 
@@ -940,7 +941,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const pct=(v,m)=>Math.min(100,Math.round((v/m)*100));
   const barClass=(v,m,isMax=false)=>{const p=pct(v,m);if(isMax)return p>90?"bar-over":p>70?"bar-warn":"bar-ok";return"bar-ok";};
 
-  const{listening,startListening,stopListening}=useVoice(text=>{setFoodInput(p=>p?p+" "+text:text);});
+  const{listening,startListening,stopListening}=useVoice(function(text){setFoodInput(function(p){return p?p+" "+text:text;});},"en-US");
 
   function toggleTaken(id){const u={...takenToday,[id]:!takenToday[id]};setTakenToday(u);store.set("taken-"+todayKey(),u);}
 
@@ -2415,7 +2416,7 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
   const chatRef=useRef(null);
-  const{listening,startListening,stopListening}=useVoice(text=>{setInput(p=>p?p+" "+text:text);});
+  const{listening,startListening,stopListening}=useVoice(function(text){setInput(function(p){return p?p+" "+text:text;});},profile&&profile.language||"en-US");
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
   const QUICK=["What should I eat for dinner?","How am I doing on my targets today?","What's missing nutritionally?","Suggest something from my pantry","Did I take all my meds?","How's my water intake?","I just ate — log it","I'm at a restaurant — help me choose"];
 
@@ -3859,7 +3860,7 @@ function App(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         // Auto-clear if app version changed OR no version stored (old data)
-        const APP_VERSION="1.75";
+        const APP_VERSION="1.76";
         const storedVersion=localStorage.getItem("sn_app_version");
         if(!storedVersion||storedVersion!==APP_VERSION){
           // Clear ALL old data on version change
