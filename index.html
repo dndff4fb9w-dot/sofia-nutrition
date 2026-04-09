@@ -2395,7 +2395,7 @@ function PantryTab({pantry,setPantry}){
 }
 
 // ─── COACH TAB ───────────────────────────────────────────────────────────────
-function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections,setFoodLog,setWater,setExLogs,setSleepLog,setMaster,setTakenToday,context}){
+function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical,sleepLog,skChecks,injections,setFoodLog,setWater,setExLogs,setSleepLog,setMaster,setTakenToday,setProfile,context}){
   function getGreeting(){
     var name=profile&&profile.name?", "+profile.name:"";
     if(context==="upload-documents") return "I see you're uploading health documents"+name+". Once you add them, tap the analyze button and I'll read everything — conditions, medications, targets — and set up your profile automatically. Or just tell me what you're uploading and I can help!";
@@ -2445,6 +2445,55 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
     }
     var finalReply=reply||"Sorry, I couldn't respond. Try again.";
     setMessages([...newMsgs,{role:"assistant",content:finalReply}]);
+
+    // During onboarding: extract any health data from conversation and save to profile
+    if(context==="onboarding"&&setProfile&&text.trim()){
+      try{
+        var extractSys="You are a health data extractor. Extract ONLY explicitly stated health information from this conversation. Return ONLY valid JSON, nothing else:\n{\"medications\":[{\"name\":\"\",\"dose\":\"\",\"frequency\":\"\",\"reason\":\"\"}],\"conditions\":[],\"restrictions\":[],\"notes\":\"\"}.\nReturn empty arrays if nothing found. Never invent data.";
+        var extractMsg="User said: "+text+"\n\nSalus replied: "+finalReply+"\n\nExtract any medications, conditions, or dietary restrictions the user explicitly mentioned.";
+        var extracted=await callClaude([{role:"user",content:extractMsg}],extractSys);
+        if(extracted){
+          var clean=extracted.replace(/```json|```/g,"").trim();
+          var data=JSON.parse(clean);
+          var changed=false;
+          var updatedProfile=Object.assign({},profile);
+          // Add new conditions
+          if(data.conditions&&data.conditions.length){
+            var existingConds=updatedProfile.conditions||[];
+            data.conditions.forEach(function(c){
+              if(c&&!existingConds.some(function(e){return e.toLowerCase()===c.toLowerCase();})){
+                existingConds=existingConds.concat([c]);changed=true;
+              }
+            });
+            updatedProfile.conditions=existingConds;
+          }
+          // Add new restrictions
+          if(data.restrictions&&data.restrictions.length){
+            var existingRest=updatedProfile.restrictions||[];
+            data.restrictions.forEach(function(r){
+              if(r&&!existingRest.some(function(e){return e.toLowerCase()===r.toLowerCase();})){
+                existingRest=existingRest.concat([r]);changed=true;
+              }
+            });
+            updatedProfile.restrictions=existingRest;
+          }
+          if(changed){setProfile(updatedProfile);store.set("profile",updatedProfile);}
+          // Add new medications to master list
+          if(data.medications&&data.medications.length&&setMaster){
+            var existingMeds=master||[];
+            var newMeds=existingMeds.slice();
+            var medsChanged=false;
+            data.medications.forEach(function(m){
+              if(m&&m.name&&!existingMeds.some(function(e){return e.name&&e.name.toLowerCase()===m.name.toLowerCase();})){
+                newMeds.push({id:Date.now()+Math.random(),name:m.name,dose:m.dose||"",frequency:m.frequency||"daily",reason:m.reason||"",time:"morning",paused:false,synergies:[]});
+                medsChanged=true;
+              }
+            });
+            if(medsChanged){setMaster(newMeds);store.set("master",newMeds);}
+          }
+        }
+      } catch(e){}
+    }
 
     // Auto-route: if user said they ate/drank something, try to parse and log it
     if(setFoodLog&&text&&(text.toLowerCase().includes("i ate")||text.toLowerCase().includes("i had")||text.toLowerCase().includes("i'm having")||text.toLowerCase().includes("i just had"))){
@@ -2555,6 +2604,7 @@ function SalusOverlay(props){
             setSleepLog={props.setSleepLog}
             setMaster={props.setMaster}
             setTakenToday={props.setTakenToday}
+            setProfile={props.setProfile}
             context={props.context}
           />
         </div>
@@ -3809,7 +3859,7 @@ function App(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         // Auto-clear if app version changed OR no version stored (old data)
-        const APP_VERSION="1.74";
+        const APP_VERSION="1.75";
         const storedVersion=localStorage.getItem("sn_app_version");
         if(!storedVersion||storedVersion!==APP_VERSION){
           // Clear ALL old data on version change
@@ -3875,7 +3925,8 @@ function App(){
         master={master} takenToday={{}} exLogs={[]} medical={DEFAULT_MEDICAL}
         sleepLog={[]} skChecks={{}} injections={[]}
         setFoodLog={null} setWater={null} setExLogs={null}
-        setSleepLog={null} setMaster={null} setTakenToday={null}
+        setSleepLog={null} setMaster={setMaster} setTakenToday={null}
+        setProfile={setProfile}
         context="onboarding"
       />}
     </div>
@@ -3917,7 +3968,7 @@ function App(){
         {tab==="injections"&&<InjectionsTab injections={injections} setInjections={setInjections}/>}
         {tab==="medical"&&<MedicalTab medical={medical} setMedical={setMedical} medDocs={medDocs} setMedDocs={setMedDocs} profile={profile} setProfile={setProfile}/>}
         {tab==="pantry"&&<PantryTab pantry={pantry} setPantry={setPantry}/>}
-        {tab==="salus"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical} sleepLog={sleepLog} skChecks={skChecks} injections={injections} setFoodLog={setFoodLog} setWater={setWater} setExLogs={setExLogs} setSleepLog={setSleepLog} setMaster={setMaster} setTakenToday={setTakenToday}/>}
+        {tab==="salus"&&<CoachTab profile={profile} foodLog={foodLog} pantry={pantry} water={water} master={master} takenToday={takenToday} exLogs={exLogs} medical={medical} sleepLog={sleepLog} skChecks={skChecks} injections={injections} setFoodLog={setFoodLog} setWater={setWater} setExLogs={setExLogs} setSleepLog={setSleepLog} setMaster={setMaster} setTakenToday={setTakenToday} setProfile={setProfile} context={tab}/>}
         {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} onRedo={()=>{store.set("onboarded",null);setOnboarded(false);}}/>}
 
         {/* Floating Salus button — visible on every tab except salus itself */}
@@ -3959,6 +4010,7 @@ function App(){
           setSleepLog={setSleepLog}
           setMaster={setMaster}
           setTakenToday={setTakenToday}
+          setProfile={setProfile}
           context={tab}
         />}
       </div>
