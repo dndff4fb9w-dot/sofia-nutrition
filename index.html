@@ -3003,33 +3003,23 @@ function OnboardingFlow({onComplete,existingProfile}){
                       setDob((p[0]||new Date().getFullYear())+"-"+m+"-"+(p[2]||"01"));
                     }}>
                     <option value="">Month</option>
-                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map(function(mn,i){
+                    {["January","February","March","April","May","June","July","August","September","October","November","December"].map(function(mn,i){
                       return <option key={i+1} value={i+1}>{mn}</option>;
                     })}
                   </select>
-                  <select className="text-input" style={{flex:1}}
+                  <input className="text-input" style={{flex:1}} type="number" placeholder="Day" min="1" max="31"
                     value={dob?parseInt(dob.split("-")[2]):""}
                     onChange={function(e){
                       var p=dob?dob.split("-"):["","",""];
                       var d=String(e.target.value).padStart(2,"0");
                       setDob((p[0]||new Date().getFullYear())+"-"+(p[1]||"01")+"-"+d);
-                    }}>
-                    <option value="">Day</option>
-                    {Array.from({length:31},function(_,i){return i+1;}).map(function(d){
-                      return <option key={d} value={d}>{d}</option>;
-                    })}
-                  </select>
-                  <select className="text-input" style={{flex:2}}
+                    }}/>
+                  <input className="text-input" style={{flex:2}} type="number" placeholder="Year" min="1900" max={new Date().getFullYear()}
                     value={dob?parseInt(dob.split("-")[0]):""}
                     onChange={function(e){
                       var p=dob?dob.split("-"):["","",""];
                       setDob(e.target.value+"-"+(p[1]||"01")+"-"+(p[2]||"01"));
-                    }}>
-                    <option value="">Year</option>
-                    {Array.from({length:100},function(_,i){return new Date().getFullYear()-i;}).map(function(y){
-                      return <option key={y} value={y}>{y}</option>;
-                    })}
-                  </select>
+                    }}/>
                 </div>
                 {dob&&dob.split("-")[0]&&dob.split("-")[1]&&dob.split("-")[2]&&(function(){
                   var b=new Date(dob);var t=new Date();
@@ -3806,7 +3796,7 @@ function App(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         // Auto-clear if app version changed OR no version stored (old data)
-        const APP_VERSION="1.70";
+        const APP_VERSION="1.71";
         const storedVersion=localStorage.getItem("sn_app_version");
         if(!storedVersion||storedVersion!==APP_VERSION){
           // Clear ALL old data on version change
