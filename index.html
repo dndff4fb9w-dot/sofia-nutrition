@@ -2595,27 +2595,47 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           <span style={{fontSize:10,color:"var(--green)"}}>{stagedPhotos.length} photo{stagedPhotos.length>1?"s":""} — add question or Send</span>
         </div>
       )}
-      <div className="chat-input-area">
-        <textarea className="chat-input" placeholder={stagedPhotos.length?"Ask about the photos… (optional)":"Ask Salus… or send photos 📷"} value={input}
-          onChange={e=>setInput(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
-          rows={1}/>
-        <button
-          className={listening?"mic-btn listening":"mic-btn idle"}
-          onClick={listening?stopListening:startListening}
-          style={{flexShrink:0,position:"relative"}}
-          title={listening?"Tap to stop and send":"Tap to speak"}>
-          {listening?"⏹":"🎤"}
-          {listening&&<span style={{position:"absolute",top:-2,right:-2,width:8,height:8,background:"red",borderRadius:"50%",animation:"pulse 1s infinite"}}/>}
-        </button>
-        {/* Camera button */}
-        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
-          📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
-        </label>
-        <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}} title="Choose photos">
-          🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
-        </label>
-        <button className="btn btn-primary" onClick={()=>send(input)} disabled={loading||(!input.trim()&&!stagedPhotos.length)}>{loading?<span className="loading-spin"/>:"Send"}</button>
+      <div style={{borderTop:"1px solid var(--border)",background:"var(--cream2)",padding:"8px 10px",borderRadius:"0 0 12px 12px"}}>
+        {/* Row 1: Text input */}
+        <textarea className="chat-input" placeholder={stagedPhotos.length?"Ask about the photos… (optional)":listening?"Listening… tap ⏹ when done":"Ask Salus… or tap 🎤 to speak"}
+          value={input}
+          onChange={function(e){setInput(e.target.value);}}
+          onKeyDown={function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
+          rows={2}
+          style={{width:"100%",marginBottom:8,boxSizing:"border-box",
+            border:listening?"2px solid var(--terra)":"1px solid var(--border)",
+            borderRadius:8,padding:"8px 10px",fontSize:12,fontFamily:"'DM Mono',monospace",
+            background:listening?"rgba(184,92,56,0.04)":"white",resize:"none",outline:"none"}}/>
+        {/* Row 2: Action buttons */}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {/* Mic button — left side */}
+          <button
+            onClick={listening?stopListening:startListening}
+            style={{width:42,height:42,borderRadius:"50%",border:"none",cursor:"pointer",flexShrink:0,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",
+              background:listening?"var(--terra)":"var(--cream2)",
+              color:listening?"white":"var(--ink2)",
+              boxShadow:listening?"0 0 0 3px rgba(184,92,56,0.3)":"0 1px 3px rgba(0,0,0,0.1)",
+              position:"relative"}}
+            title={listening?"Tap to stop":"Tap to speak"}>
+            {listening?"⏹":"🎤"}
+          </button>
+          {/* Camera buttons */}
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}>
+            📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={function(e){if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
+          </label>
+          <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}} title="Choose photos">
+            🖼<input type="file" accept="image/*" multiple style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={function(e){if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
+          </label>
+          {/* Send button — right side, clearly separate */}
+          <button
+            style={{flex:1,height:42,borderRadius:10,background:(!input.trim()&&!stagedPhotos.length)||loading?"var(--ink3)":"var(--green)",
+              color:"white",border:"none",cursor:(!input.trim()&&!stagedPhotos.length)||loading?"default":"pointer",
+              fontSize:12,fontFamily:"'DM Mono',monospace",letterSpacing:".08em",textTransform:"uppercase",fontWeight:500}}
+            onClick={function(){if(!listening)send(input);}}
+            disabled={loading||(!input.trim()&&!stagedPhotos.length)}>
+            {loading?<span className="loading-spin"/>:"Send ↑"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3347,7 +3367,7 @@ function OnboardingFlow({onComplete,existingProfile,onSalusOpen}){
               <div key={i} className="condition-tag" style={{marginBottom:5}}>{m}<button className="remove-tag" onClick={()=>setMedList(medList.filter((_,j)=>j!==i))}>×</button></div>
             ))}
             <div style={{display:"flex",gap:7,marginTop:20}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(7)}>Back</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(6)}>Back</button>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>finish()}>Skip</button>
               <button className="btn btn-primary" style={{flex:2}} onClick={()=>finish()}>Next →</button>
             </div>
@@ -3391,7 +3411,7 @@ function OnboardingFlow({onComplete,existingProfile,onSalusOpen}){
               <span style={{fontSize:11,color:"var(--ink)",lineHeight:1.5}}>I have read and agree to the Terms of Service and Privacy Policy</span>
             </div>
             <div style={{display:"flex",gap:7}}>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(9)}>Back</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setStep(1)}>Back</button>
               <button className="btn btn-primary" style={{flex:2,opacity:tcAccepted?1:.4}} onClick={()=>{if(tcAccepted)setStep(2);}} disabled={!tcAccepted}>
                 Agree & Continue →
               </button>
@@ -3913,7 +3933,7 @@ function App(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         // Auto-clear if app version changed OR no version stored (old data)
-        const APP_VERSION="1.77";
+        const APP_VERSION="1.79";
         const storedVersion=localStorage.getItem("sn_app_version");
         if(!storedVersion||storedVersion!==APP_VERSION){
           // Clear ALL old data on version change
