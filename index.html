@@ -542,17 +542,60 @@ function useVoice(onResult,lang){
   var useState=React.useState;var useRef=React.useRef;
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
+  const accumulatedRef=useRef("");
+
   function startListening(){
     var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SpeechRecognition){alert("Voice input not supported. Use Safari on iPhone.");return;}
+    accumulatedRef.current="";
     var rec=new SpeechRecognition();
-    rec.lang=lang||"en-US";rec.continuous=false;rec.interimResults=false;
-    rec.onresult=function(e){var t=e.results[0][0].transcript;onResult(t);setListening(false);};
-    rec.onerror=function(){setListening(false);};
-    rec.onend=function(){setListening(false);};
-    try{rec.start();recRef.current=rec;setListening(true);}catch(e){setListening(false);}
+    rec.lang=lang||"en-US";
+    rec.continuous=true;
+    rec.interimResults=true;
+    rec.onresult=function(e){
+      var interim="";var final="";
+      for(var i=0;i<e.results.length;i++){
+        if(e.results[i].isFinal){final+=e.results[i][0].transcript+" ";}
+        else{interim+=e.results[i][0].transcript;}
+      }
+      if(final){accumulatedRef.current+=final;}
+      // Show live preview — accumulated finals + current interim
+      onResult(accumulatedRef.current+interim,false);
+    };
+    rec.onerror=function(e){
+      // On iOS, continuous mode sometimes errors with "no-speech" — restart it
+      if(e.error==="no-speech"&&recRef.current){
+        try{recRef.current.stop();recRef.current.start();}catch(err){}
+      } else {
+        setListening(false);
+      }
+    };
+    rec.onend=function(){
+      // If still supposed to be listening, restart (iOS kills it after silence)
+      if(recRef.currentlyListening){
+        try{rec.start();}catch(e){setListening(false);}
+      }
+    };
+    try{
+      rec.start();
+      recRef.current=rec;
+      recRef.currentlyListening=true;
+      setListening(true);
+    }catch(e){setListening(false);}
   }
-  function stopListening(){if(recRef.current){recRef.current.stop();}setListening(false);}
+
+  function stopListening(){
+    recRef.currentlyListening=false;
+    if(recRef.current){
+      try{recRef.current.stop();}catch(e){}
+    }
+    // Return the final accumulated text
+    var finalText=accumulatedRef.current.trim();
+    if(finalText){onResult(finalText,true);}
+    accumulatedRef.current="";
+    setListening(false);
+  }
+
   return{listening,startListening,stopListening};
 }
 
@@ -941,7 +984,7 @@ function TodayTab({foodLog,setFoodLog,water,setWater,profile,master,takenToday,s
   const pct=(v,m)=>Math.min(100,Math.round((v/m)*100));
   const barClass=(v,m,isMax=false)=>{const p=pct(v,m);if(isMax)return p>90?"bar-over":p>70?"bar-warn":"bar-ok";return"bar-ok";};
 
-  const{listening,startListening,stopListening}=useVoice(function(text){setFoodInput(function(p){return p?p+" "+text:text;});},"en-US");
+  const{listening,startListening,stopListening}=useVoice(function(text,isFinal){setFoodInput(text);},"en-US");
 
   function toggleTaken(id){const u={...takenToday,[id]:!takenToday[id]};setTakenToday(u);store.set("taken-"+todayKey(),u);}
 
@@ -2416,7 +2459,10 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
   const[voiceWorking,setVoiceWorking]=useState(false);
   const[voiceResult,setVoiceResult]=useState(null);
   const chatRef=useRef(null);
-  const{listening,startListening,stopListening}=useVoice(function(text){setInput(function(p){return p?p+" "+text:text;});},profile&&profile.language||"en-US");
+  const{listening,startListening,stopListening}=useVoice(function(text,isFinal){
+    if(isFinal){setInput(text);}
+    else{setInput(text);}
+  },profile&&profile.language||"en-US");
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[messages]);
   const QUICK=["What should I eat for dinner?","How am I doing on my targets today?","What's missing nutritionally?","Suggest something from my pantry","Did I take all my meds?","How's my water intake?","I just ate — log it","I'm at a restaurant — help me choose"];
 
@@ -2554,7 +2600,14 @@ function CoachTab({profile,foodLog,pantry,water,master,takenToday,exLogs,medical
           onChange={e=>setInput(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
           rows={1}/>
-        <button className={`mic-btn ${listening?"listening":"idle"}`} onClick={listening?stopListening:startListening}>{listening?"🔴":"🎤"}</button>
+        <button
+          className={listening?"mic-btn listening":"mic-btn idle"}
+          onClick={listening?stopListening:startListening}
+          style={{flexShrink:0,position:"relative"}}
+          title={listening?"Tap to stop and send":"Tap to speak"}>
+          {listening?"⏹":"🎤"}
+          {listening&&<span style={{position:"absolute",top:-2,right:-2,width:8,height:8,background:"red",borderRadius:"50%",animation:"pulse 1s infinite"}}/>}
+        </button>
         {/* Camera button */}
         <label style={{width:38,height:38,borderRadius:"50%",background:"var(--cream2)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,fontSize:16,position:"relative"}}>
           📷<input type="file" accept="image/*" capture="environment" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}} onChange={e=>{if(e.target.files.length)stagePhotos(e.target.files);e.target.value="";}} disabled={loading}/>
@@ -3860,7 +3913,7 @@ function App(){
       loadUSDAKey().catch(()=>{}); // non-blocking
       try{
         // Auto-clear if app version changed OR no version stored (old data)
-        const APP_VERSION="1.76";
+        const APP_VERSION="1.77";
         const storedVersion=localStorage.getItem("sn_app_version");
         if(!storedVersion||storedVersion!==APP_VERSION){
           // Clear ALL old data on version change
